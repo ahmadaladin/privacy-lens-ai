@@ -15,6 +15,8 @@ The project is being developed in small, tested releases. The first release supp
 - Redact detected regions using blur, pixelation, or a solid mask
 - Process JPG, JPEG, and PNG images
 - Write a JSON audit manifest containing detection coordinates
+- Process an image directory without one corrupt file aborting the full batch
+- Quarantine failed-file metadata without copying sensitive source files
 - Remove embedded image metadata during re-encoding
 - Refuse to overwrite the original sensitive input
 - Run without sending files to an external service
@@ -36,6 +38,23 @@ Redact faces in an image:
 privacy-lens input.jpg output.jpg --style blur --manifest audit.json
 ```
 
+Process all supported images directly inside a directory:
+
+```bash
+privacy-lens input-directory output-directory --batch --style solid
+```
+
+Batch outputs are separated into:
+
+- `sanitized/` for successfully redacted images
+- `manifests/` for per-image audit records
+- `quarantine/` for metadata-only failure records
+- `batch-manifest.json` for deterministic processed/failed totals
+
+Batch mode intentionally does not recurse into subdirectories yet. It returns
+exit code `1` when any candidate fails, while preserving successful outputs so
+operators and CI jobs can detect partial failure.
+
 Run the tests:
 
 ```bash
@@ -52,7 +71,10 @@ image -> validation -> | local detector  | -> detections
                          audit manifest <- redaction policy -> sanitized image
 ```
 
-The detector and redaction engine are separate. This allows stronger face, license-plate, and OCR detectors to be added without rewriting the pipeline.
+The detector and redaction engine are separate. This allows stronger face,
+license-plate, and OCR detectors to be added without rewriting the pipeline.
+Batch orchestration adds failure isolation around the same single-image
+pipeline rather than maintaining a second redaction implementation.
 
 ### Engineering decisions
 
@@ -63,6 +85,7 @@ The detector and redaction engine are separate. This allows stronger face, licen
 | Structured audit manifest | Every output can be traced to the detector, policy, and regions used. |
 | Honest confidence semantics | The Haar baseline reports `null`, not a fabricated probability. |
 | Source-overwrite protection | A failed command cannot silently destroy the original evidence. |
+| Metadata-only quarantine | Failed inputs remain untouched and are not duplicated into a less-controlled output folder. |
 
 ## Example manifest
 

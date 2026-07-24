@@ -15,6 +15,7 @@ Do not open a public issue containing personal information, private files, or un
 - Never use real identity documents as public test fixtures.
 - Keep original files outside the repository.
 - Do not log OCR text or other detected PII.
+- Batch quarantine stores failure metadata only; it never copies or moves the sensitive input.
+- Treat filenames and local audit manifests as potentially sensitive operational data.
 
 PrivacyLens does not claim that its output is automatically compliant with GDPR, HIPAA, or any other regulation.
-

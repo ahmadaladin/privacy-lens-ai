@@ -10,7 +10,7 @@
 - [x] JSON audit manifest
 - [x] Explicit image validation and source-overwrite protection
 - [x] EXIF metadata removal verification
-- [ ] Failed-file quarantine for batch workflows
+- [x] Fault-isolated batch processing with metadata-only failed-file quarantine
 
 ## v0.2 — OCR and review
 
@@ -31,7 +31,7 @@
 
 - [ ] Recursive batch processing
 - [ ] YOLO and COCO annotation preservation
-- [ ] Failed-file quarantine
+- [ ] Recursive quarantine with resume and retry controls
 - [ ] Dataset-level risk summary
 - [ ] CI privacy gate
 
