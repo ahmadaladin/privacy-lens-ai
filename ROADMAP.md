@@ -15,7 +15,8 @@
 ## v0.2 — OCR and review
 
 - [ ] OCR text-region detection
-- [ ] Email and phone-number recognizers
+- [x] Email and phone-number recognizers
+- [x] Plain-text redaction pipeline with value-free span manifest
 - [ ] Confidence thresholds and configurable policies
 - [ ] Visual review interface
 - [ ] Manual bounding-box correction

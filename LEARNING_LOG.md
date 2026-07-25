@@ -61,3 +61,34 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I added fault-isolated batch orchestration around the existing image pipeline. Successful files remain usable when another file is corrupt, while the command reports partial failure to CI and creates a metadata-only quarantine record without duplicating sensitive input.
+
+## Day 3 — Privacy-safe text PII redaction
+
+### Concepts
+
+- Recognition identifies the category and character span; redaction replaces the span.
+- A text recognizer protocol keeps privacy rules independent from file I/O and future OCR engines.
+- Audit records can retain a category and span without copying the sensitive value.
+- Recognizer priority resolves overlap, such as a numeric email username that resembles a phone number.
+- A rule match is not a calibrated probability, so its score is recorded as `null`.
+- Unicode-aware digit handling supports more scripts, but a plausible phone pattern is not country-level validation.
+
+### Files to inspect
+
+- `src/privacylens/text_recognition.py`
+- `src/privacylens/text_pipeline.py`
+- `tests/test_text_recognition.py`
+- `tests/test_text_pipeline.py`
+
+### Practice
+
+1. Create a UTF-8 `.txt` file containing synthetic email and phone values.
+2. Run `privacy-lens notes.txt sanitized.txt --text --manifest audit.json`.
+3. Confirm the source remains unchanged and the output contains `[EMAIL]` and `[PHONE]`.
+4. Confirm the manifest contains spans but none of the matched values or absolute local path.
+5. Try Arabic-Indic phone digits and a date, then explain the different outcomes.
+6. Explain how OCR output can later enter the same recognizer without changing its rules.
+
+### Interview explanation
+
+> I built the PII layer independently from OCR so text extraction and privacy recognition can evolve separately. The pipeline replaces matched spans locally, resolves overlapping recognizers deterministically, and records only categories and offsets in its audit manifest. I deliberately report rule scores as null and document that pattern matching still needs benchmark evaluation and human review.
