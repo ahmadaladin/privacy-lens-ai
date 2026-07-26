@@ -17,7 +17,7 @@
 - [ ] OCR text-region detection
 - [x] Email and phone-number recognizers
 - [x] Plain-text redaction pipeline with value-free span manifest
-- [ ] Confidence thresholds and configurable policies
+- [x] Confidence thresholds and versioned configurable policies
 - [ ] Visual review interface
 - [ ] Manual bounding-box correction
 

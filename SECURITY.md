@@ -17,6 +17,8 @@ Do not open a public issue containing personal information, private files, or un
 - Do not log OCR text or other detected PII.
 - Text audit manifests store categories and character spans, never matched values.
 - Text processing refuses source overwrite, requires UTF-8 `.txt` files, and limits inputs to 5 MiB.
+- Policy files are versioned, size-limited, and reject unknown keys and PII categories.
+- Unscored findings are redacted by default; `unscored_action: retain` must be an explicit choice.
 - Batch quarantine stores failure metadata only; it never copies or moves the sensitive input.
 - Treat filenames and local audit manifests as potentially sensitive operational data.
 
@@ -24,5 +26,11 @@ Rule-based email and phone recognition can miss PII or classify ordinary text
 as PII. Phone recognition does not validate whether a number is assigned or
 valid for a country. Review sanitized output before it leaves the trusted
 environment.
+
+A policy can deliberately retain findings by category, threshold, or unscored
+behavior. Treat any output with a non-zero `retained_count` as review output,
+not sanitized output. The manifest records actions and reasons without storing
+the matched values. The CLI returns exit code `1` and sets `review_required`
+when any finding is retained.
 
 PrivacyLens does not claim that its output is automatically compliant with GDPR, HIPAA, or any other regulation.

@@ -92,3 +92,35 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I built the PII layer independently from OCR so text extraction and privacy recognition can evolve separately. The pipeline replaces matched spans locally, resolves overlapping recognizers deterministically, and records only categories and offsets in its audit manifest. I deliberately report rule scores as null and document that pattern matching still needs benchmark evaluation and human review.
+
+## Day 4 — Versioned redaction policy
+
+### Concepts
+
+- Detection answers what was found; policy decides what action to take.
+- Policy-as-code makes category, confidence, and unscored behavior reproducible.
+- Strict schema validation prevents a typo from silently disabling protection.
+- A confidence threshold is meaningful only for a calibrated model score.
+- Fail-closed handling redacts unscored findings unless retention is explicit.
+- A retained finding remains sensitive even when its value is absent from the audit manifest.
+- Review-required output returns a non-zero status so CI cannot mistake it for sanitized output.
+
+### Files to inspect
+
+- `src/privacylens/policy.py`
+- `src/privacylens/text_pipeline.py`
+- `tests/test_policy.py`
+- `tests/test_text_pipeline.py`
+
+### Practice
+
+1. Run text redaction without a policy and confirm all unscored findings are redacted.
+2. Create a policy that selects only `email` and run it on synthetic email and phone values.
+3. Confirm the phone remains in review output, `retained_count` is `1`, and the command returns exit code `1`.
+4. Confirm the manifest records `kind_not_selected` without storing the phone value.
+5. Misspell `email` in the policy and verify processing stops instead of silently continuing.
+6. Explain why `minimum_score` cannot turn the current regex match into a confidence score.
+
+### Interview explanation
+
+> I separated detection from policy decisions and added a strict, versioned policy-as-code layer. It supports category selection, calibrated-score thresholds, and explicit unscored behavior. The default fails closed, configuration typos stop processing, and every redact or retain decision is auditable without copying the matched PII into the manifest.

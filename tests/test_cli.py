@@ -38,3 +38,17 @@ def test_batch_cli_reports_partial_failure(tmp_path: Path, monkeypatch, capsys) 
 
     assert exit_code == 1
     assert "Processed 1 image(s); 1 failed" in capsys.readouterr().out
+
+
+def test_policy_option_is_rejected_outside_text_mode(tmp_path: Path, capsys) -> None:
+    exit_code = cli.main(
+        [
+            str(tmp_path / "input.png"),
+            str(tmp_path / "output.png"),
+            "--policy",
+            str(tmp_path / "policy.json"),
+        ]
+    )
+
+    assert exit_code == 2
+    assert "--policy requires --text" in capsys.readouterr().err

@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from privacylens.policy import PolicyAction, RedactionPolicy
 from privacylens.text_recognition import (
     CompositeTextRecognizer,
     TextDetection,
@@ -13,8 +14,25 @@ from privacylens.text_recognition import (
     redact_text,
 )
 
-TEXT_MANIFEST_SCHEMA_VERSION = "1.0"
+TEXT_MANIFEST_SCHEMA_VERSION = "1.1"
 MAX_TEXT_BYTES = 5 * 1024 * 1024
+TEXT_PII_KINDS = frozenset({"email", "phone"})
+
+
+@dataclass(frozen=True, slots=True)
+class TextPolicyDecision:
+    """A value-free record of what the policy did with one finding."""
+
+    detection: TextDetection
+    action: PolicyAction
+    reason: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            **self.detection.to_dict(),
+            "action": self.action,
+            "reason": self.reason,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,7 +42,24 @@ class TextProcessResult:
     input_name: str
     output_name: str
     recognizer: str
-    detections: tuple[TextDetection, ...]
+    policy: RedactionPolicy
+    decisions: tuple[TextPolicyDecision, ...]
+
+    @property
+    def detections(self) -> tuple[TextDetection, ...]:
+        return tuple(decision.detection for decision in self.decisions)
+
+    @property
+    def redacted_count(self) -> int:
+        return sum(decision.action == "redact" for decision in self.decisions)
+
+    @property
+    def retained_count(self) -> int:
+        return len(self.decisions) - self.redacted_count
+
+    @property
+    def review_required(self) -> bool:
+        return self.retained_count > 0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -32,7 +67,11 @@ class TextProcessResult:
             "input_name": self.input_name,
             "output_name": self.output_name,
             "recognizer": self.recognizer,
-            "detections": [detection.to_dict() for detection in self.detections],
+            "policy": self.policy.to_dict(),
+            "redacted_count": self.redacted_count,
+            "retained_count": self.retained_count,
+            "review_required": self.review_required,
+            "detections": [decision.to_dict() for decision in self.decisions],
         }
 
     def write_manifest(self, path: str | Path) -> None:
@@ -49,6 +88,7 @@ def process_text_file(
     output_path: str | Path,
     *,
     recognizer: TextRecognizer | None = None,
+    policy: RedactionPolicy | None = None,
 ) -> TextProcessResult:
     """Detect and redact supported PII patterns in a UTF-8 text file."""
 
@@ -57,8 +97,23 @@ def process_text_file(
     _validate_text_paths(source, destination)
     text = _read_text(source)
     active_recognizer = recognizer or CompositeTextRecognizer()
+    active_policy = policy or RedactionPolicy()
     detections = tuple(active_recognizer.detect(text))
-    sanitized = redact_text(text, detections)
+    decisions: list[TextPolicyDecision] = []
+    for detection in detections:
+        outcome = active_policy.evaluate(detection.kind, detection.score)
+        decisions.append(
+            TextPolicyDecision(
+                detection=detection,
+                action=outcome.action,
+                reason=outcome.reason,
+            )
+        )
+    decision_tuple = tuple(decisions)
+    sanitized = redact_text(
+        text,
+        (decision.detection for decision in decision_tuple if decision.action == "redact"),
+    )
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(sanitized, encoding="utf-8")
 
@@ -66,7 +121,8 @@ def process_text_file(
         input_name=source.name,
         output_name=destination.name,
         recognizer=type(active_recognizer).__name__,
-        detections=detections,
+        policy=active_policy,
+        decisions=decision_tuple,
     )
 
 

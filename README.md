@@ -70,6 +70,30 @@ privacy-lens notes.txt sanitized.txt --text --manifest text-audit.json
 Text manifests record categories and character spans, but never the matched
 email address or phone number. The source file is left unchanged.
 
+Apply a versioned policy:
+
+```json
+{
+  "schema_version": "1.0",
+  "redact_kinds": ["email"],
+  "minimum_score": 0.8,
+  "unscored_action": "redact"
+}
+```
+
+```bash
+privacy-lens notes.txt review.txt --text --policy policy.json --manifest audit.json
+```
+
+Policies are strict: unknown keys, unknown PII categories, unsupported schema
+versions, and invalid thresholds stop processing. `unscored_action` defaults
+to `redact`, which fails closed for deterministic rules that do not produce a
+calibrated confidence. A policy can explicitly retain findings; such output is
+for controlled review and must not be assumed sanitized. The command returns
+exit code `1` whenever a finding is retained, and the manifest sets
+`review_required` to `true`, so automated workflows cannot mistake review
+output for a fully redacted result.
+
 Run the tests:
 
 ```bash
@@ -106,6 +130,8 @@ privacy rules inside an OCR engine.
 | Metadata-only quarantine | Failed inputs remain untouched and are not duplicated into a less-controlled output folder. |
 | Value-free text manifest | Auditing can identify what rule fired and where without duplicating matched PII. |
 | Uncalibrated rule scores are `null` | Regex matches are decisions, not statistically calibrated probabilities. |
+| Versioned policy-as-code | Category, threshold, and unscored decisions are reproducible and reject silent configuration typos. |
+| Fail-closed unscored default | Findings without calibrated scores are redacted unless a policy explicitly retains them. |
 
 ## Example manifest
 
