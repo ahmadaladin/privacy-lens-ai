@@ -52,3 +52,32 @@ def test_policy_option_is_rejected_outside_text_mode(tmp_path: Path, capsys) -> 
 
     assert exit_code == 2
     assert "--policy requires --text" in capsys.readouterr().err
+
+
+def test_review_plan_is_rejected_in_batch_mode(tmp_path: Path, capsys) -> None:
+    exit_code = cli.main(
+        [
+            str(tmp_path / "input"),
+            str(tmp_path / "output"),
+            "--batch",
+            "--review-plan",
+            str(tmp_path / "review.json"),
+        ]
+    )
+
+    assert exit_code == 2
+    assert "valid only for single-image mode" in capsys.readouterr().err
+
+
+def test_review_plan_requires_manifest_in_image_mode(tmp_path: Path, capsys) -> None:
+    exit_code = cli.main(
+        [
+            str(tmp_path / "input.png"),
+            str(tmp_path / "output.png"),
+            "--review-plan",
+            str(tmp_path / "review.json"),
+        ]
+    )
+
+    assert exit_code == 2
+    assert "requires --manifest" in capsys.readouterr().err

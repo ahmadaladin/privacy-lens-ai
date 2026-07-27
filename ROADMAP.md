@@ -19,7 +19,7 @@
 - [x] Plain-text redaction pipeline with value-free span manifest
 - [x] Confidence thresholds and versioned configurable policies
 - [ ] Visual review interface
-- [ ] Manual bounding-box correction
+- [x] Fingerprint-bound manual bounding-box correction
 
 ## v0.3 — Multilingual documents
 

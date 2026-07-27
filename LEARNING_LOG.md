@@ -124,3 +124,34 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I separated detection from policy decisions and added a strict, versioned policy-as-code layer. It supports category selection, calibrated-score thresholds, and explicit unscored behavior. The default fails closed, configuration typos stop processing, and every redact or retain decision is auditable without copying the matched PII into the manifest.
+
+## Day 5 — Fingerprint-bound manual review
+
+### Concepts
+
+- Human-in-the-loop review needs a stable contract, not UI-specific business logic.
+- A source fingerprint prevents corrected coordinates from being applied to the wrong image.
+- Manual regions replace model detections so the reviewer’s decision is deterministic and auditable.
+- Coordinate validation must reject negative, empty, duplicate, and out-of-bounds boxes.
+- Validation must finish before writing an output to avoid producing misleading artifacts.
+- An empty region list is an explicit human approval, not proof that the detector found nothing.
+
+### Files to inspect
+
+- `src/privacylens/review.py`
+- `src/privacylens/pipeline.py`
+- `tests/test_review.py`
+- `tests/test_pipeline.py`
+
+### Practice
+
+1. Run automatic image redaction with `--manifest` and copy its `input_sha256`.
+2. Create `review.json`, adjust one synthetic bounding box, and rerun with `--review-plan`.
+3. Confirm only the reviewed region is redacted and `human_reviewed` is `true`.
+4. Change one character of `input_sha256` and confirm no output is created.
+5. Try a box extending past the image width and confirm validation stops processing.
+6. Explain how a future visual review UI can generate the same review-plan JSON.
+
+### Interview explanation
+
+> I added a human-review contract that is independent of any UI framework. Reviewers can replace automatic detections with corrected regions, but the plan is cryptographically bound to the exact source image and strictly validated before output is written. That prevents stale coordinates, silent schema mistakes, and out-of-bounds corrections while giving a future web interface a stable backend contract.

@@ -44,6 +44,29 @@ Redact faces in an image:
 privacy-lens input.jpg output.jpg --style blur --manifest audit.json
 ```
 
+Correct automatic boxes with a fingerprint-bound manual review plan:
+
+```json
+{
+  "schema_version": "1.0",
+  "input_sha256": "<copy input_sha256 from audit.json>",
+  "regions": [
+    {"kind": "face", "box": [42, 18, 126, 117]}
+  ]
+}
+```
+
+```bash
+privacy-lens input.jpg reviewed.jpg --review-plan review.json --style solid --manifest reviewed-audit.json
+```
+
+The review plan replaces automatic detections with exactly the approved
+regions. Its SHA-256 binding prevents coordinates prepared for one image from
+being applied to another. Invalid, duplicate, or out-of-bounds regions stop
+processing before an output is written. An empty `regions` list is an explicit
+human approval that the image contains no regions to redact. CLI review runs
+require `--manifest` so the manual decision always leaves an audit record.
+
 Process all supported images directly inside a directory:
 
 ```bash
@@ -132,16 +155,21 @@ privacy rules inside an OCR engine.
 | Uncalibrated rule scores are `null` | Regex matches are decisions, not statistically calibrated probabilities. |
 | Versioned policy-as-code | Category, threshold, and unscored decisions are reproducible and reject silent configuration typos. |
 | Fail-closed unscored default | Findings without calibrated scores are redacted unless a policy explicitly retains them. |
+| Fingerprint-bound review plan | Manual corrections cannot silently be applied to a different source image. |
+| Stable review contract | A future visual interface can emit the same validated JSON used by the CLI and Python API. |
 
 ## Example manifest
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "1.1",
   "input_path": "input.jpg",
   "output_path": "output.jpg",
+  "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
   "style": "blur",
   "detector": "HaarFaceDetector",
+  "human_reviewed": false,
+  "review_plan_schema_version": null,
   "detections": [
     {
       "kind": "face",
