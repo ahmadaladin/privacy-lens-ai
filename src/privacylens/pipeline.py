@@ -13,11 +13,12 @@ import numpy as np
 from privacylens.detectors.base import Detector
 from privacylens.detectors.haar_face import HaarFaceDetector
 from privacylens.models import Detection
+from privacylens.ocr import OCR_SIDECAR_SCHEMA_VERSION, OCRSidecar
 from privacylens.redaction import redact_regions
 from privacylens.review import REVIEW_PLAN_SCHEMA_VERSION, ReviewPlan
 
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png"}
-MANIFEST_SCHEMA_VERSION = "1.1"
+MANIFEST_SCHEMA_VERSION = "1.2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +30,7 @@ class ProcessResult:
     detections: tuple[Detection, ...]
     input_sha256: str
     human_reviewed: bool
+    ocr_sidecar_observation_count: int | None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -42,6 +44,12 @@ class ProcessResult:
             "review_plan_schema_version": (
                 REVIEW_PLAN_SCHEMA_VERSION if self.human_reviewed else None
             ),
+            "ocr_sidecar_schema_version": (
+                OCR_SIDECAR_SCHEMA_VERSION
+                if self.ocr_sidecar_observation_count is not None
+                else None
+            ),
+            "ocr_sidecar_observation_count": self.ocr_sidecar_observation_count,
             "detections": [detection.to_dict() for detection in self.detections],
         }
 
@@ -61,23 +69,32 @@ def process_image(
     style: str = "blur",
     detector: Detector | None = None,
     review_plan: ReviewPlan | None = None,
+    ocr_sidecar: OCRSidecar | None = None,
 ) -> ProcessResult:
     """Detect and redact sensitive regions in one image."""
 
     source = Path(input_path)
     destination = Path(output_path)
     _validate_paths(source, destination)
-    if detector is not None and review_plan is not None:
-        raise ValueError("detector and review_plan cannot be used together")
+    modes = sum(value is not None for value in (detector, review_plan, ocr_sidecar))
+    if modes > 1:
+        raise ValueError("detector, review_plan, and ocr_sidecar cannot be used together")
 
     image, input_sha256 = _read_image(source)
     if review_plan is not None and review_plan.input_sha256 != input_sha256:
         raise ValueError("review plan fingerprint does not match the source image")
+    if ocr_sidecar is not None and ocr_sidecar.input_sha256 != input_sha256:
+        raise ValueError("OCR sidecar fingerprint does not match the source image")
     if review_plan is not None:
         height, width = image.shape[:2]
         review_plan.validate_for_image(width=width, height=height)
         detections = review_plan.detections
         detector_name = "ManualReviewPlan"
+    elif ocr_sidecar is not None:
+        height, width = image.shape[:2]
+        ocr_sidecar.validate_for_image(width=width, height=height)
+        detections = ocr_sidecar.pii_detections()
+        detector_name = "OCRSidecarPIIMapper"
     else:
         active_detector = detector or HaarFaceDetector()
         detections = tuple(active_detector.detect(image))
@@ -93,6 +110,9 @@ def process_image(
         detections=detections,
         input_sha256=input_sha256,
         human_reviewed=review_plan is not None,
+        ocr_sidecar_observation_count=(
+            len(ocr_sidecar.observations) if ocr_sidecar is not None else None
+        ),
     )
 
 

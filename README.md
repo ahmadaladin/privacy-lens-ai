@@ -6,8 +6,9 @@ PrivacyLens is a local-first privacy pipeline for detecting and redacting person
 
 The project is being developed in small, tested releases. The current release
 supports face redaction in images and rule-based email and phone redaction in
-plain text. Future releases will connect OCR output to the same text
-recognizers, then add Arabic and English evaluation, PDFs, dataset-level
+plain text. It can also ingest fingerprint-bound observations from an OCR
+engine and map recognized PII back to image regions. Future releases will add
+evaluated OCR adapters, Arabic and English evaluation, PDFs, dataset-level
 processing, annotation preservation, and video.
 
 > [!IMPORTANT]
@@ -23,6 +24,8 @@ processing, annotation preservation, and video.
 - Quarantine failed-file metadata without copying sensitive source files
 - Detect email addresses and plausible phone numbers in local UTF-8 text files
 - Replace text findings with category markers and write value-free span manifests
+- Map provider-neutral OCR observations containing PII back to image regions
+- Bind OCR observations to the exact source image with SHA-256
 - Remove embedded image metadata during re-encoding
 - Refuse to overwrite the original sensitive input
 - Run without sending files to an external service
@@ -66,6 +69,39 @@ being applied to another. Invalid, duplicate, or out-of-bounds regions stop
 processing before an output is written. An empty `regions` list is an explicit
 human approval that the image contains no regions to redact. CLI review runs
 require `--manifest` so the manual decision always leaves an audit record.
+
+Redact image regions described by an upstream OCR engine:
+
+```json
+{
+  "schema_version": "1.0",
+  "input_sha256": "<SHA-256 of the exact encoded input image>",
+  "observations": [
+    {
+      "text": "Contact fake.person@example.com",
+      "box": [18, 42, 246, 76],
+      "score": 0.94
+    }
+  ]
+}
+```
+
+```bash
+privacy-lens input.png sanitized.png --ocr-sidecar ocr.json --style solid --manifest audit.json
+```
+
+The sidecar is an engine-neutral integration contract, not an OCR
+implementation. Tesseract, EasyOCR, a document model, or another extractor can
+produce the same shape. PrivacyLens verifies that the sidecar fingerprint
+matches the exact input, validates every observation before writing output,
+passes each observation's text through the existing PII recognizers, and
+redacts the whole observation box when supported PII is found.
+
+> [!WARNING]
+> OCR sidecars contain raw extracted text and may contain PII. Keep them inside
+> the same protected boundary as source files; do not commit, publish, or log
+> them. Audit manifests record only the sidecar schema, observation count, PII
+> categories, and boxes—not OCR text.
 
 Process all supported images directly inside a directory:
 
@@ -131,6 +167,11 @@ image -> validation -> | local detector  | -> detections
                         +-----------------+        |
                                                  v
                          audit manifest <- redaction policy -> sanitized image
+
+image + OCR sidecar -> fingerprint/bounds validation -> text PII recognizers
+                                                         |
+                                                         v
+                                      value-free boxes -> image redaction
 ```
 
 The detector and redaction engine are separate. This allows stronger face,
@@ -157,12 +198,16 @@ privacy rules inside an OCR engine.
 | Fail-closed unscored default | Findings without calibrated scores are redacted unless a policy explicitly retains them. |
 | Fingerprint-bound review plan | Manual corrections cannot silently be applied to a different source image. |
 | Stable review contract | A future visual interface can emit the same validated JSON used by the CLI and Python API. |
+| Provider-neutral OCR sidecar | OCR engines can change without coupling extraction, PII recognition, image redaction, or audit logic. |
+| Fingerprint-bound OCR observations | Stale text coordinates cannot silently redact the wrong image. |
+| Separate confidence semantics | OCR extraction scores are not reused as PII confidence; rule-based PII findings remain `null`. |
+| Coarse observation-box redaction | The whole OCR box is masked because character-level geometry is unavailable; this favors privacy over visual precision. |
 
 ## Example manifest
 
 ```json
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "input_path": "input.jpg",
   "output_path": "output.jpg",
   "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -170,6 +215,8 @@ privacy rules inside an OCR engine.
   "detector": "HaarFaceDetector",
   "human_reviewed": false,
   "review_plan_schema_version": null,
+  "ocr_sidecar_schema_version": null,
+  "ocr_sidecar_observation_count": null,
   "detections": [
     {
       "kind": "face",
@@ -198,7 +245,10 @@ are intentionally lightweight baselines that require evaluation before a
 stable release. The current email rule targets conventional ASCII addresses;
 the phone rule checks plausible digit counts and separators but does not
 validate country numbering plans. Both can produce false positives and false
-negatives, so outputs still require review.
+negatives, so outputs still require review. PrivacyLens does not yet run an OCR
+engine itself. Sidecar quality, reading order, coordinate accuracy, and missed
+text remain the upstream extractor's responsibility and require benchmark
+evaluation.
 
 ## License
 

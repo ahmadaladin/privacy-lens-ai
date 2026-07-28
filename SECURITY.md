@@ -22,6 +22,11 @@ Do not open a public issue containing personal information, private files, or un
 - Manual review plans are versioned, size-limited, and bound to the source SHA-256.
 - Invalid, duplicate, or out-of-bounds manual regions stop processing before output is written.
 - CLI manual-review runs require a manifest so each human decision leaves an audit record.
+- OCR sidecars contain raw extracted text and must be protected like source images.
+- OCR sidecars are versioned, size-limited, and bound to the source SHA-256.
+- Invalid or out-of-bounds OCR observations stop processing before output is written.
+- OCR-sidecar audit manifests store only counts, categories, and boxes, never extracted text.
+- CLI OCR-sidecar runs require a manifest so sidecar-driven redaction leaves an audit record.
 - Batch quarantine stores failure metadata only; it never copies or moves the sensitive input.
 - Treat filenames and local audit manifests as potentially sensitive operational data.
 
@@ -40,5 +45,12 @@ Image fingerprints allow audit correlation and should be treated as sensitive
 operational metadata. A valid manual plan deliberately replaces automatic
 detections, including when its region list is empty. Only trusted reviewers
 should create or approve review plans.
+
+OCR confidence describes extraction quality, not the probability that extracted
+text is PII. PrivacyLens therefore validates but does not reuse the sidecar
+score as a PII confidence. Current rule-based PII findings remain unscored.
+When character-level coordinates are unavailable, PrivacyLens redacts the whole
+OCR observation box. This can remove extra non-sensitive pixels but avoids
+leaving a partial sensitive value visible.
 
 PrivacyLens does not claim that its output is automatically compliant with GDPR, HIPAA, or any other regulation.

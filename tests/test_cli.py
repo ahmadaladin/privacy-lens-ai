@@ -1,3 +1,5 @@
+import json
+from hashlib import sha256
 from pathlib import Path
 
 import cv2
@@ -81,3 +83,78 @@ def test_review_plan_requires_manifest_in_image_mode(tmp_path: Path, capsys) -> 
 
     assert exit_code == 2
     assert "requires --manifest" in capsys.readouterr().err
+
+
+def test_ocr_sidecar_requires_manifest_in_image_mode(tmp_path: Path, capsys) -> None:
+    exit_code = cli.main(
+        [
+            str(tmp_path / "input.png"),
+            str(tmp_path / "output.png"),
+            "--ocr-sidecar",
+            str(tmp_path / "ocr.json"),
+        ]
+    )
+
+    assert exit_code == 2
+    assert "--ocr-sidecar requires --manifest" in capsys.readouterr().err
+
+
+def test_ocr_sidecar_is_rejected_in_text_mode(tmp_path: Path, capsys) -> None:
+    exit_code = cli.main(
+        [
+            str(tmp_path / "input.txt"),
+            str(tmp_path / "output.txt"),
+            "--text",
+            "--ocr-sidecar",
+            str(tmp_path / "ocr.json"),
+        ]
+    )
+
+    assert exit_code == 2
+    assert "valid only for single-image mode" in capsys.readouterr().err
+
+
+def test_ocr_sidecar_cli_redacts_and_writes_value_free_audit(
+    tmp_path: Path,
+    capsys,
+) -> None:
+    source = tmp_path / "input.png"
+    destination = tmp_path / "output.png"
+    sidecar = tmp_path / "ocr.json"
+    manifest = tmp_path / "audit.json"
+    assert cv2.imwrite(str(source), np.full((8, 8, 3), 255, dtype=np.uint8))
+    sensitive_value = "fake.person@example.com"
+    sidecar.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "input_sha256": sha256(source.read_bytes()).hexdigest(),
+                "observations": [
+                    {
+                        "text": sensitive_value,
+                        "box": [1, 1, 5, 5],
+                        "score": 0.95,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.main(
+        [
+            str(source),
+            str(destination),
+            "--ocr-sidecar",
+            str(sidecar),
+            "--style",
+            "solid",
+            "--manifest",
+            str(manifest),
+        ]
+    )
+
+    assert exit_code == 0
+    assert np.all(cv2.imread(str(destination))[1:5, 1:5] == 0)
+    assert sensitive_value not in manifest.read_text(encoding="utf-8")
+    assert "Redacted 1 OCR observation region(s) containing PII" in capsys.readouterr().out

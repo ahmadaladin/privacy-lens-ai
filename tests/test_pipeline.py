@@ -8,6 +8,7 @@ import pytest
 from PIL import Image
 
 from privacylens.models import BoundingBox, Detection
+from privacylens.ocr import OCRObservation, OCRSidecar
 from privacylens.pipeline import process_image
 from privacylens.review import ReviewPlan
 
@@ -32,11 +33,13 @@ def test_process_image_writes_output_and_manifest(tmp_path: Path) -> None:
     assert manifest.is_file()
     assert np.all(output[1:4, 1:4] == 0)
     audit = json.loads(manifest.read_text(encoding="utf-8"))
-    assert audit["schema_version"] == "1.1"
+    assert audit["schema_version"] == "1.2"
     assert audit["detector"] == "FixedDetector"
     assert audit["input_sha256"] == sha256(source.read_bytes()).hexdigest()
     assert audit["human_reviewed"] is False
     assert audit["review_plan_schema_version"] is None
+    assert audit["ocr_sidecar_schema_version"] is None
+    assert audit["ocr_sidecar_observation_count"] is None
     assert audit["detections"][0]["kind"] == "face"
 
 
@@ -119,6 +122,69 @@ def test_review_plan_and_detector_are_mutually_exclusive(tmp_path: Path) -> None
             detector=FixedDetector(),
             review_plan=review_plan,
         )
+
+
+def test_ocr_sidecar_redacts_pii_regions_without_leaking_text_to_manifest(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "input.png"
+    destination = tmp_path / "output.png"
+    manifest = tmp_path / "audit.json"
+    image = np.full((10, 10, 3), 255, dtype=np.uint8)
+    assert cv2.imwrite(str(source), image)
+    sensitive_value = "fake.person@example.com"
+    sidecar = OCRSidecar(
+        input_sha256=sha256(source.read_bytes()).hexdigest(),
+        observations=(
+            OCRObservation(sensitive_value, BoundingBox(1, 1, 5, 5), 0.96),
+            OCRObservation("Invoice date", BoundingBox(6, 6, 9, 9), 0.99),
+        ),
+    )
+
+    result = process_image(source, destination, style="solid", ocr_sidecar=sidecar)
+    result.write_manifest(manifest)
+
+    output = cv2.imread(str(destination))
+    assert np.all(output[1:5, 1:5] == 0)
+    assert np.all(output[6:9, 6:9] == 255)
+    audit_text = manifest.read_text(encoding="utf-8")
+    assert sensitive_value not in audit_text
+    audit = json.loads(audit_text)
+    assert audit["detector"] == "OCRSidecarPIIMapper"
+    assert audit["ocr_sidecar_schema_version"] == "1.0"
+    assert audit["ocr_sidecar_observation_count"] == 2
+    assert audit["detections"] == [{"kind": "email", "score": None, "box": [1, 1, 5, 5]}]
+
+
+def test_ocr_sidecar_rejects_wrong_source_without_writing_output(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "input.png"
+    destination = tmp_path / "output.png"
+    assert cv2.imwrite(str(source), np.full((8, 8, 3), 255, dtype=np.uint8))
+    sidecar = OCRSidecar(input_sha256="0" * 64, observations=())
+
+    with pytest.raises(ValueError, match="fingerprint does not match"):
+        process_image(source, destination, ocr_sidecar=sidecar)
+
+    assert not destination.exists()
+
+
+def test_ocr_sidecar_rejects_out_of_bounds_observation_before_writing(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "input.png"
+    destination = tmp_path / "output.png"
+    assert cv2.imwrite(str(source), np.full((8, 8, 3), 255, dtype=np.uint8))
+    sidecar = OCRSidecar(
+        input_sha256=sha256(source.read_bytes()).hexdigest(),
+        observations=(OCRObservation("fake@example.com", BoundingBox(1, 1, 9, 7)),),
+    )
+
+    with pytest.raises(ValueError, match="outside the source image"):
+        process_image(source, destination, ocr_sidecar=sidecar)
+
+    assert not destination.exists()
 
 
 def test_process_image_refuses_to_overwrite_sensitive_source(tmp_path: Path) -> None:

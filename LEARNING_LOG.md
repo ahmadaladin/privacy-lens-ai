@@ -155,3 +155,36 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I added a human-review contract that is independent of any UI framework. Reviewers can replace automatic detections with corrected regions, but the plan is cryptographically bound to the exact source image and strictly validated before output is written. That prevents stale coordinates, silent schema mistakes, and out-of-bounds corrections while giving a future web interface a stable backend contract.
+
+## Day 6 — Provider-neutral OCR observation bridge
+
+### Concepts
+
+- OCR extracts text and coordinates; PII recognition decides whether that text is sensitive.
+- An engine-neutral sidecar prevents Tesseract, EasyOCR, or a future document model from becoming coupled to redaction and audit logic.
+- OCR output contains raw text and must be protected like the sensitive source.
+- A source fingerprint prevents stale OCR coordinates from being applied to a different image.
+- OCR confidence is not PII confidence; rule-based PII decisions remain unscored.
+- Whole-observation redaction is a privacy-first fallback when character-level geometry is unavailable.
+- Audit records can prove what category and box were redacted without copying OCR text.
+
+### Files to inspect
+
+- `src/privacylens/ocr.py`
+- `src/privacylens/pipeline.py`
+- `tests/test_ocr.py`
+- `tests/test_pipeline.py`
+
+### Practice
+
+1. Use a synthetic image and calculate the SHA-256 of the exact encoded file.
+2. Create an OCR sidecar with one fake email observation and one ordinary-text observation.
+3. Run `privacy-lens input.png output.png --ocr-sidecar ocr.json --style solid --manifest audit.json`.
+4. Confirm the email box is redacted, the ordinary-text box is unchanged, and the manifest contains no extracted text.
+5. Change one fingerprint character and confirm processing stops without an output.
+6. Explain why the OCR score is preserved only in the protected sidecar and the PII detection score is `null`.
+7. Explain what an actual OCR adapter still needs to implement and evaluate.
+
+### Interview explanation
+
+> I added an engine-neutral boundary between OCR and privacy recognition. Upstream OCR provides fingerprint-bound text boxes, then the existing PII recognizers map sensitive observations back to image regions. The pipeline validates the full sidecar before writing, keeps raw OCR text out of audit records, and does not mislabel OCR confidence as PII confidence. This lets us evaluate or replace OCR engines without rewriting redaction and audit behavior.

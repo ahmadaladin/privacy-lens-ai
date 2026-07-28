@@ -7,6 +7,7 @@ import sys
 from collections.abc import Sequence
 
 from privacylens.batch import process_directory
+from privacylens.ocr import load_ocr_sidecar
 from privacylens.pipeline import process_image
 from privacylens.policy import load_policy
 from privacylens.redaction import REDACTION_STYLES
@@ -47,6 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--review-plan",
         help="fingerprint-bound manual regions; valid only for one image",
     )
+    parser.add_argument(
+        "--ocr-sidecar",
+        help="fingerprint-bound OCR observations; valid only for one image",
+    )
     return parser
 
 
@@ -57,8 +62,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("--policy requires --text")
         if args.review_plan and (args.text or args.batch):
             raise ValueError("--review-plan is valid only for single-image mode")
+        if args.ocr_sidecar and (args.text or args.batch):
+            raise ValueError("--ocr-sidecar is valid only for single-image mode")
+        if args.ocr_sidecar and args.review_plan:
+            raise ValueError("--ocr-sidecar and --review-plan cannot be used together")
         if args.review_plan and not args.manifest:
             raise ValueError("--review-plan requires --manifest for an audit record")
+        if args.ocr_sidecar and not args.manifest:
+            raise ValueError("--ocr-sidecar requires --manifest for an audit record")
         if args.batch:
             batch_result = process_directory(args.input, args.output, style=args.style)
         elif args.text:
@@ -66,11 +77,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             text_result = process_text_file(args.input, args.output, policy=policy)
         else:
             review_plan = load_review_plan(args.review_plan) if args.review_plan else None
+            ocr_sidecar = load_ocr_sidecar(args.ocr_sidecar) if args.ocr_sidecar else None
             result = process_image(
                 args.input,
                 args.output,
                 style=args.style,
                 review_plan=review_plan,
+                ocr_sidecar=ocr_sidecar,
             )
     except (FileNotFoundError, ValueError) as error:
         print(f"privacy-lens: error: {error}", file=sys.stderr)
@@ -96,7 +109,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.manifest:
         result.write_manifest(args.manifest)
-    region_source = "manually reviewed region(s)" if result.human_reviewed else "face(s)"
+    if result.human_reviewed:
+        region_source = "manually reviewed region(s)"
+    elif result.ocr_sidecar_observation_count is not None:
+        region_source = "OCR observation region(s) containing PII"
+    else:
+        region_source = "face(s)"
     print(f"Redacted {len(result.detections)} {region_source}: {result.output_path}")
     return 0
 
