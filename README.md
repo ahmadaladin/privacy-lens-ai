@@ -7,9 +7,9 @@ PrivacyLens is a local-first privacy pipeline for detecting and redacting person
 The project is being developed in small, tested releases. The current release
 supports face redaction in images and rule-based email and phone redaction in
 plain text. It can also ingest fingerprint-bound observations from an OCR
-engine and map recognized PII back to image regions. Future releases will add
-evaluated OCR adapters, Arabic and English evaluation, PDFs, dataset-level
-processing, annotation preservation, and video.
+engine, or run an installed Tesseract engine locally, and map recognized PII
+back to image regions. Future releases will add Arabic and English benchmark
+evaluation, PDFs, dataset-level processing, annotation preservation, and video.
 
 > [!IMPORTANT]
 > Automated redaction can miss sensitive information. PrivacyLens is an engineering tool with a human-review roadmap, not a guarantee of regulatory compliance.
@@ -24,6 +24,8 @@ processing, annotation preservation, and video.
 - Quarantine failed-file metadata without copying sensitive source files
 - Detect email addresses and plausible phone numbers in local UTF-8 text files
 - Replace text findings with category markers and write value-free span manifests
+- Run an installed Tesseract OCR engine locally without persisting extracted text
+- Reconstruct word tokens into line regions so spaced phone numbers remain detectable
 - Map provider-neutral OCR observations containing PII back to image regions
 - Bind OCR observations to the exact source image with SHA-256
 - Remove embedded image metadata during re-encoding
@@ -40,6 +42,10 @@ python -m venv .venv
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 python -m pip install -e ".[dev]"
 ```
+
+Direct OCR also requires the `tesseract` executable and the requested
+trained-data languages to be installed through the operating system. Tesseract
+is intentionally an external dependency rather than a hidden Python download.
 
 Redact faces in an image:
 
@@ -69,6 +75,24 @@ being applied to another. Invalid, duplicate, or out-of-bounds regions stop
 processing before an output is written. An empty `regions` list is an explicit
 human approval that the image contains no regions to redact. CLI review runs
 require `--manifest` so the manual decision always leaves an audit record.
+
+Run local OCR and redact recognized email or phone regions:
+
+```bash
+privacy-lens scan.png sanitized.png \
+  --ocr-engine tesseract \
+  --ocr-language eng \
+  --style solid \
+  --manifest audit.json
+```
+
+Use language identifiers installed with Tesseract, such as `eng` or `eng+ara`.
+PrivacyLens resolves a fixed `tesseract` executable, passes arguments without a
+shell, enforces a timeout and output limits, and keeps extracted text in memory.
+It groups Tesseract word tokens by document line before PII recognition so a
+phone number split across several word boxes can still be recognized. The
+manifest records the OCR engine, version, languages, observation count, PII
+categories, and redacted boxes—never the extracted text.
 
 Redact image regions described by an upstream OCR engine:
 
@@ -172,6 +196,11 @@ image + OCR sidecar -> fingerprint/bounds validation -> text PII recognizers
                                                          |
                                                          v
                                       value-free boxes -> image redaction
+
+image -> local Tesseract -> in-memory line observations -> text PII recognizers
+                                                               |
+                                                               v
+                                            value-free boxes -> image redaction
 ```
 
 The detector and redaction engine are separate. This allows stronger face,
@@ -179,8 +208,8 @@ license-plate, and OCR detectors to be added without rewriting the pipeline.
 Batch orchestration adds failure isolation around the same single-image
 pipeline rather than maintaining a second redaction implementation.
 The text pipeline separates recognition from file processing and replacement.
-Future OCR can supply extracted text to these recognizers without embedding
-privacy rules inside an OCR engine.
+The Tesseract adapter and external sidecars both supply observations to the
+same recognizers without embedding privacy rules inside an OCR engine.
 
 ### Engineering decisions
 
@@ -202,12 +231,16 @@ privacy rules inside an OCR engine.
 | Fingerprint-bound OCR observations | Stale text coordinates cannot silently redact the wrong image. |
 | Separate confidence semantics | OCR extraction scores are not reused as PII confidence; rule-based PII findings remain `null`. |
 | Coarse observation-box redaction | The whole OCR box is masked because character-level geometry is unavailable; this favors privacy over visual precision. |
+| External Tesseract dependency | The OCR binary and trained data remain explicit, locally managed runtime dependencies. |
+| Line-level token reconstruction | Spaced values such as phone numbers can be recognized without coupling PII rules to Tesseract TSV. |
+| Memory-only direct OCR text | Direct OCR does not create a raw-text sidecar or echo OCR stderr into user-facing errors. |
+| Reproducible OCR audit metadata | Engine version and language identifiers are recorded without recording extracted values. |
 
 ## Example manifest
 
 ```json
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "input_path": "input.jpg",
   "output_path": "output.jpg",
   "input_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
@@ -217,6 +250,9 @@ privacy rules inside an OCR engine.
   "review_plan_schema_version": null,
   "ocr_sidecar_schema_version": null,
   "ocr_sidecar_observation_count": null,
+  "ocr_engine": null,
+  "ocr_engine_version": null,
+  "ocr_languages": null,
   "detections": [
     {
       "kind": "face",
@@ -245,10 +281,10 @@ are intentionally lightweight baselines that require evaluation before a
 stable release. The current email rule targets conventional ASCII addresses;
 the phone rule checks plausible digit counts and separators but does not
 validate country numbering plans. Both can produce false positives and false
-negatives, so outputs still require review. PrivacyLens does not yet run an OCR
-engine itself. Sidecar quality, reading order, coordinate accuracy, and missed
-text remain the upstream extractor's responsibility and require benchmark
-evaluation.
+negatives, so outputs still require review. The Tesseract adapter is a local
+engineering baseline, not an accuracy claim. OCR reading order, coordinate
+quality, language packs, image quality, tokenization, and missed text require
+the planned Arabic and English benchmark evaluation.
 
 ## License
 

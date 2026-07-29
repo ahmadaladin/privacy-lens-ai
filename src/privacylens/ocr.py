@@ -7,6 +7,7 @@ import math
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from privacylens.models import BoundingBox, Detection
 from privacylens.text_recognition import CompositeTextRecognizer, TextRecognizer
@@ -16,6 +17,46 @@ MAX_OCR_SIDECAR_BYTES = 256 * 1024
 MAX_OCR_OBSERVATIONS = 5000
 MAX_OCR_TEXT_CHARACTERS = 4096
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+ENGINE_PATTERN = re.compile(r"[a-z][a-z0-9_-]{0,31}")
+LANGUAGE_ID_PATTERN = re.compile(r"[a-z0-9_]{2,16}")
+
+
+@dataclass(frozen=True, slots=True)
+class OCRExtraction:
+    """In-memory OCR result plus reproducibility metadata."""
+
+    sidecar: OCRSidecar
+    engine: str
+    engine_version: str
+    languages: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.sidecar, OCRSidecar):
+            raise ValueError("OCR extraction must contain an OCRSidecar")
+        if not isinstance(self.engine, str) or not ENGINE_PATTERN.fullmatch(self.engine):
+            raise ValueError("OCR extraction engine must use a stable lowercase identifier")
+        if (
+            not isinstance(self.engine_version, str)
+            or not self.engine_version
+            or len(self.engine_version) > 64
+            or not self.engine_version.isprintable()
+        ):
+            raise ValueError("OCR extraction must identify its engine and version")
+        if not isinstance(self.languages, tuple):
+            raise ValueError("OCR extraction languages must be an immutable tuple")
+        if not self.languages or any(
+            not isinstance(language, str) or not LANGUAGE_ID_PATTERN.fullmatch(language)
+            for language in self.languages
+        ):
+            raise ValueError("OCR extraction must identify at least one language")
+
+
+class OCRExtractor(Protocol):
+    """A local OCR engine that returns the provider-neutral observation contract."""
+
+    def extract(self, source: Path, *, input_sha256: str) -> OCRExtraction:
+        """Extract protected text observations without persisting raw OCR text."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)

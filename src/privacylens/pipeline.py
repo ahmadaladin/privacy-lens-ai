@@ -13,12 +13,12 @@ import numpy as np
 from privacylens.detectors.base import Detector
 from privacylens.detectors.haar_face import HaarFaceDetector
 from privacylens.models import Detection
-from privacylens.ocr import OCR_SIDECAR_SCHEMA_VERSION, OCRSidecar
+from privacylens.ocr import OCR_SIDECAR_SCHEMA_VERSION, OCRExtractor, OCRSidecar
 from privacylens.redaction import redact_regions
 from privacylens.review import REVIEW_PLAN_SCHEMA_VERSION, ReviewPlan
 
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png"}
-MANIFEST_SCHEMA_VERSION = "1.2"
+MANIFEST_SCHEMA_VERSION = "1.3"
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,6 +31,9 @@ class ProcessResult:
     input_sha256: str
     human_reviewed: bool
     ocr_sidecar_observation_count: int | None
+    ocr_engine: str | None
+    ocr_engine_version: str | None
+    ocr_languages: tuple[str, ...] | None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -50,6 +53,9 @@ class ProcessResult:
                 else None
             ),
             "ocr_sidecar_observation_count": self.ocr_sidecar_observation_count,
+            "ocr_engine": self.ocr_engine,
+            "ocr_engine_version": self.ocr_engine_version,
+            "ocr_languages": list(self.ocr_languages) if self.ocr_languages else None,
             "detections": [detection.to_dict() for detection in self.detections],
         }
 
@@ -70,31 +76,48 @@ def process_image(
     detector: Detector | None = None,
     review_plan: ReviewPlan | None = None,
     ocr_sidecar: OCRSidecar | None = None,
+    ocr_extractor: OCRExtractor | None = None,
 ) -> ProcessResult:
     """Detect and redact sensitive regions in one image."""
 
     source = Path(input_path)
     destination = Path(output_path)
     _validate_paths(source, destination)
-    modes = sum(value is not None for value in (detector, review_plan, ocr_sidecar))
+    modes = sum(value is not None for value in (detector, review_plan, ocr_sidecar, ocr_extractor))
     if modes > 1:
-        raise ValueError("detector, review_plan, and ocr_sidecar cannot be used together")
+        raise ValueError(
+            "detector, review_plan, ocr_sidecar, and ocr_extractor cannot be used together"
+        )
 
     image, input_sha256 = _read_image(source)
+    active_ocr_sidecar = ocr_sidecar
+    ocr_engine = "external_sidecar" if ocr_sidecar is not None else None
+    ocr_engine_version = None
+    ocr_languages = None
+    if ocr_extractor is not None:
+        extraction = ocr_extractor.extract(source, input_sha256=input_sha256)
+        active_ocr_sidecar = extraction.sidecar
+        ocr_engine = extraction.engine
+        ocr_engine_version = extraction.engine_version
+        ocr_languages = extraction.languages
     if review_plan is not None and review_plan.input_sha256 != input_sha256:
         raise ValueError("review plan fingerprint does not match the source image")
-    if ocr_sidecar is not None and ocr_sidecar.input_sha256 != input_sha256:
+    if active_ocr_sidecar is not None and active_ocr_sidecar.input_sha256 != input_sha256:
         raise ValueError("OCR sidecar fingerprint does not match the source image")
     if review_plan is not None:
         height, width = image.shape[:2]
         review_plan.validate_for_image(width=width, height=height)
         detections = review_plan.detections
         detector_name = "ManualReviewPlan"
-    elif ocr_sidecar is not None:
+    elif active_ocr_sidecar is not None:
         height, width = image.shape[:2]
-        ocr_sidecar.validate_for_image(width=width, height=height)
-        detections = ocr_sidecar.pii_detections()
-        detector_name = "OCRSidecarPIIMapper"
+        active_ocr_sidecar.validate_for_image(width=width, height=height)
+        detections = active_ocr_sidecar.pii_detections()
+        detector_name = (
+            "OCRSidecarPIIMapper"
+            if ocr_extractor is None
+            else f"{extraction.engine.title()}OCRPIIMapper"
+        )
     else:
         active_detector = detector or HaarFaceDetector()
         detections = tuple(active_detector.detect(image))
@@ -111,8 +134,11 @@ def process_image(
         input_sha256=input_sha256,
         human_reviewed=review_plan is not None,
         ocr_sidecar_observation_count=(
-            len(ocr_sidecar.observations) if ocr_sidecar is not None else None
+            len(active_ocr_sidecar.observations) if active_ocr_sidecar is not None else None
         ),
+        ocr_engine=ocr_engine,
+        ocr_engine_version=ocr_engine_version,
+        ocr_languages=ocr_languages,
     )
 
 

@@ -14,7 +14,7 @@
 
 ## v0.2 — OCR and review
 
-- [ ] OCR text-region detection
+- [x] Local Tesseract OCR text-region detection
 - [x] Provider-neutral OCR observation ingestion and PII-to-image mapping
 - [x] Email and phone-number recognizers
 - [x] Plain-text redaction pipeline with value-free span manifest

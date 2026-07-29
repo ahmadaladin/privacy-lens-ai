@@ -12,6 +12,7 @@ from privacylens.pipeline import process_image
 from privacylens.policy import load_policy
 from privacylens.redaction import REDACTION_STYLES
 from privacylens.review import load_review_plan
+from privacylens.tesseract_ocr import TesseractOCR
 from privacylens.text_pipeline import TEXT_PII_KINDS, process_text_file
 
 
@@ -52,6 +53,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--ocr-sidecar",
         help="fingerprint-bound OCR observations; valid only for one image",
     )
+    parser.add_argument(
+        "--ocr-engine",
+        choices=["tesseract"],
+        help="run a supported local OCR engine; valid only for one image",
+    )
+    parser.add_argument(
+        "--ocr-language",
+        help="Tesseract trained-data identifiers such as eng or eng+ara",
+    )
     return parser
 
 
@@ -64,12 +74,20 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("--review-plan is valid only for single-image mode")
         if args.ocr_sidecar and (args.text or args.batch):
             raise ValueError("--ocr-sidecar is valid only for single-image mode")
+        if args.ocr_engine and (args.text or args.batch):
+            raise ValueError("--ocr-engine is valid only for single-image mode")
         if args.ocr_sidecar and args.review_plan:
             raise ValueError("--ocr-sidecar and --review-plan cannot be used together")
+        if args.ocr_engine and (args.ocr_sidecar or args.review_plan):
+            raise ValueError("--ocr-engine cannot be combined with a sidecar or review plan")
+        if args.ocr_language and not args.ocr_engine:
+            raise ValueError("--ocr-language requires --ocr-engine")
         if args.review_plan and not args.manifest:
             raise ValueError("--review-plan requires --manifest for an audit record")
         if args.ocr_sidecar and not args.manifest:
             raise ValueError("--ocr-sidecar requires --manifest for an audit record")
+        if args.ocr_engine and not args.manifest:
+            raise ValueError("--ocr-engine requires --manifest for an audit record")
         if args.batch:
             batch_result = process_directory(args.input, args.output, style=args.style)
         elif args.text:
@@ -78,12 +96,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             review_plan = load_review_plan(args.review_plan) if args.review_plan else None
             ocr_sidecar = load_ocr_sidecar(args.ocr_sidecar) if args.ocr_sidecar else None
+            ocr_extractor = (
+                TesseractOCR(language=args.ocr_language or "eng")
+                if args.ocr_engine == "tesseract"
+                else None
+            )
             result = process_image(
                 args.input,
                 args.output,
                 style=args.style,
                 review_plan=review_plan,
                 ocr_sidecar=ocr_sidecar,
+                ocr_extractor=ocr_extractor,
             )
     except (FileNotFoundError, ValueError) as error:
         print(f"privacy-lens: error: {error}", file=sys.stderr)

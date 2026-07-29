@@ -8,7 +8,7 @@ import pytest
 from PIL import Image
 
 from privacylens.models import BoundingBox, Detection
-from privacylens.ocr import OCRObservation, OCRSidecar
+from privacylens.ocr import OCRExtraction, OCRObservation, OCRSidecar
 from privacylens.pipeline import process_image
 from privacylens.review import ReviewPlan
 
@@ -16,6 +16,31 @@ from privacylens.review import ReviewPlan
 class FixedDetector:
     def detect(self, image: np.ndarray) -> list[Detection]:
         return [Detection("face", BoundingBox(1, 1, 4, 4), 0.9)]
+
+
+class FixedOCRExtractor:
+    def extract(self, source: Path, *, input_sha256: str) -> OCRExtraction:
+        return OCRExtraction(
+            sidecar=OCRSidecar(
+                input_sha256=input_sha256,
+                observations=(
+                    OCRObservation(
+                        "fake.person@example.com",
+                        BoundingBox(1, 1, 5, 5),
+                        0.95,
+                    ),
+                    OCRObservation("Invoice date", BoundingBox(6, 6, 9, 9), 0.98),
+                ),
+            ),
+            engine="tesseract",
+            engine_version="5.3.4",
+            languages=("eng",),
+        )
+
+
+class FailingOCRExtractor:
+    def extract(self, source: Path, *, input_sha256: str) -> OCRExtraction:
+        raise ValueError("synthetic OCR failure")
 
 
 def test_process_image_writes_output_and_manifest(tmp_path: Path) -> None:
@@ -33,13 +58,16 @@ def test_process_image_writes_output_and_manifest(tmp_path: Path) -> None:
     assert manifest.is_file()
     assert np.all(output[1:4, 1:4] == 0)
     audit = json.loads(manifest.read_text(encoding="utf-8"))
-    assert audit["schema_version"] == "1.2"
+    assert audit["schema_version"] == "1.3"
     assert audit["detector"] == "FixedDetector"
     assert audit["input_sha256"] == sha256(source.read_bytes()).hexdigest()
     assert audit["human_reviewed"] is False
     assert audit["review_plan_schema_version"] is None
     assert audit["ocr_sidecar_schema_version"] is None
     assert audit["ocr_sidecar_observation_count"] is None
+    assert audit["ocr_engine"] is None
+    assert audit["ocr_engine_version"] is None
+    assert audit["ocr_languages"] is None
     assert audit["detections"][0]["kind"] == "face"
 
 
@@ -153,6 +181,9 @@ def test_ocr_sidecar_redacts_pii_regions_without_leaking_text_to_manifest(
     assert audit["detector"] == "OCRSidecarPIIMapper"
     assert audit["ocr_sidecar_schema_version"] == "1.0"
     assert audit["ocr_sidecar_observation_count"] == 2
+    assert audit["ocr_engine"] == "external_sidecar"
+    assert audit["ocr_engine_version"] is None
+    assert audit["ocr_languages"] is None
     assert audit["detections"] == [{"kind": "email", "score": None, "box": [1, 1, 5, 5]}]
 
 
@@ -166,6 +197,44 @@ def test_ocr_sidecar_rejects_wrong_source_without_writing_output(
 
     with pytest.raises(ValueError, match="fingerprint does not match"):
         process_image(source, destination, ocr_sidecar=sidecar)
+
+    assert not destination.exists()
+
+
+def test_local_ocr_extractor_redacts_pii_and_records_reproducibility_metadata(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "input.png"
+    destination = tmp_path / "output.png"
+    manifest = tmp_path / "audit.json"
+    assert cv2.imwrite(str(source), np.full((10, 10, 3), 255, dtype=np.uint8))
+
+    result = process_image(
+        source,
+        destination,
+        style="solid",
+        ocr_extractor=FixedOCRExtractor(),
+    )
+    result.write_manifest(manifest)
+
+    output = cv2.imread(str(destination))
+    assert np.all(output[1:5, 1:5] == 0)
+    assert np.all(output[6:9, 6:9] == 255)
+    audit = json.loads(manifest.read_text(encoding="utf-8"))
+    assert audit["detector"] == "TesseractOCRPIIMapper"
+    assert audit["ocr_engine"] == "tesseract"
+    assert audit["ocr_engine_version"] == "5.3.4"
+    assert audit["ocr_languages"] == ["eng"]
+    assert audit["ocr_sidecar_observation_count"] == 2
+
+
+def test_local_ocr_failure_does_not_write_an_output(tmp_path: Path) -> None:
+    source = tmp_path / "input.png"
+    destination = tmp_path / "output.png"
+    assert cv2.imwrite(str(source), np.full((10, 10, 3), 255, dtype=np.uint8))
+
+    with pytest.raises(ValueError, match="synthetic OCR failure"):
+        process_image(source, destination, ocr_extractor=FailingOCRExtractor())
 
     assert not destination.exists()
 

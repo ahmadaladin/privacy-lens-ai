@@ -7,11 +7,31 @@ import numpy as np
 
 from privacylens import cli
 from privacylens.models import BoundingBox, Detection
+from privacylens.ocr import OCRExtraction, OCRObservation, OCRSidecar
 
 
 class FixedDetector:
     def detect(self, image: np.ndarray) -> list[Detection]:
         return [Detection("face", BoundingBox(1, 1, 4, 4), 0.9)]
+
+
+class FixedOCRExtractor:
+    def extract(self, source: Path, *, input_sha256: str) -> OCRExtraction:
+        return OCRExtraction(
+            sidecar=OCRSidecar(
+                input_sha256=input_sha256,
+                observations=(
+                    OCRObservation(
+                        "fake.person@example.com",
+                        BoundingBox(1, 1, 5, 5),
+                        0.95,
+                    ),
+                ),
+            ),
+            engine="tesseract",
+            engine_version="5.3.4",
+            languages=("eng",),
+        )
 
 
 def test_batch_cli_reports_partial_failure(tmp_path: Path, monkeypatch, capsys) -> None:
@@ -157,4 +177,67 @@ def test_ocr_sidecar_cli_redacts_and_writes_value_free_audit(
     assert exit_code == 0
     assert np.all(cv2.imread(str(destination))[1:5, 1:5] == 0)
     assert sensitive_value not in manifest.read_text(encoding="utf-8")
+    assert "Redacted 1 OCR observation region(s) containing PII" in capsys.readouterr().out
+
+
+def test_ocr_engine_requires_manifest_in_image_mode(tmp_path: Path, capsys) -> None:
+    exit_code = cli.main(
+        [
+            str(tmp_path / "input.png"),
+            str(tmp_path / "output.png"),
+            "--ocr-engine",
+            "tesseract",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "--ocr-engine requires --manifest" in capsys.readouterr().err
+
+
+def test_ocr_language_requires_engine(tmp_path: Path, capsys) -> None:
+    exit_code = cli.main(
+        [
+            str(tmp_path / "input.png"),
+            str(tmp_path / "output.png"),
+            "--ocr-language",
+            "eng+ara",
+        ]
+    )
+
+    assert exit_code == 2
+    assert "--ocr-language requires --ocr-engine" in capsys.readouterr().err
+
+
+def test_ocr_engine_cli_runs_local_extractor_and_writes_audit(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    source = tmp_path / "input.png"
+    destination = tmp_path / "output.png"
+    manifest = tmp_path / "audit.json"
+    assert cv2.imwrite(str(source), np.full((8, 8, 3), 255, dtype=np.uint8))
+    monkeypatch.setattr(cli, "TesseractOCR", lambda *, language: FixedOCRExtractor())
+
+    exit_code = cli.main(
+        [
+            str(source),
+            str(destination),
+            "--ocr-engine",
+            "tesseract",
+            "--ocr-language",
+            "eng",
+            "--style",
+            "solid",
+            "--manifest",
+            str(manifest),
+        ]
+    )
+
+    assert exit_code == 0
+    assert np.all(cv2.imread(str(destination))[1:5, 1:5] == 0)
+    audit = json.loads(manifest.read_text(encoding="utf-8"))
+    assert audit["ocr_engine"] == "tesseract"
+    assert audit["ocr_engine_version"] == "5.3.4"
+    assert audit["ocr_languages"] == ["eng"]
     assert "Redacted 1 OCR observation region(s) containing PII" in capsys.readouterr().out

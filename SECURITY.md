@@ -27,6 +27,11 @@ Do not open a public issue containing personal information, private files, or un
 - Invalid or out-of-bounds OCR observations stop processing before output is written.
 - OCR-sidecar audit manifests store only counts, categories, and boxes, never extracted text.
 - CLI OCR-sidecar runs require a manifest so sidecar-driven redaction leaves an audit record.
+- Direct Tesseract OCR keeps extracted text in memory and does not write a raw-text sidecar.
+- Tesseract runs without a shell, using strict language identifiers and a resolved executable.
+- Tesseract execution has a timeout and bounded accepted TSV output.
+- OCR subprocess errors report only a return code; captured stderr is not echoed.
+- Direct OCR manifests record engine metadata and redacted boxes, never extracted text.
 - Batch quarantine stores failure metadata only; it never copies or moves the sensitive input.
 - Treat filenames and local audit manifests as potentially sensitive operational data.
 
@@ -52,5 +57,11 @@ score as a PII confidence. Current rule-based PII findings remain unscored.
 When character-level coordinates are unavailable, PrivacyLens redacts the whole
 OCR observation box. This can remove extra non-sensitive pixels but avoids
 leaving a partial sensitive value visible.
+
+Tesseract is an external local executable and must be installed and updated by
+the operator. PrivacyLens accepts only simple trained-data identifiers such as
+`eng` and `eng+ara`; it does not pass arbitrary OCR configuration or shell
+text. Direct OCR output is still automatic and can miss or misread sensitive
+text. A successful command is not evidence of complete PII removal.
 
 PrivacyLens does not claim that its output is automatically compliant with GDPR, HIPAA, or any other regulation.

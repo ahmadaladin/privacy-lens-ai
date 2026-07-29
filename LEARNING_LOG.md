@@ -188,3 +188,36 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I added an engine-neutral boundary between OCR and privacy recognition. Upstream OCR provides fingerprint-bound text boxes, then the existing PII recognizers map sensitive observations back to image regions. The pipeline validates the full sidecar before writing, keeps raw OCR text out of audit records, and does not mislabel OCR confidence as PII confidence. This lets us evaluate or replace OCR engines without rewriting redaction and audit behavior.
+
+## Day 7 — Local Tesseract OCR adapter
+
+### Concepts
+
+- An OCR adapter translates engine-specific output into the provider-neutral observation contract.
+- Tesseract emits word-level TSV; grouping words by line allows spaced phone numbers to reach the existing recognizer intact.
+- Subprocess arguments should be passed as a list without a shell, and user-controlled language identifiers need strict validation.
+- Raw OCR output and stderr can contain sensitive text, so they must not be logged or copied into errors and manifests.
+- Timeouts and output limits prevent an OCR subprocess from consuming unbounded application resources.
+- OCR engine version and languages are reproducibility metadata; they do not prove model accuracy.
+- A tested integration pipeline and an evaluated OCR model are different claims.
+
+### Files to inspect
+
+- `src/privacylens/tesseract_ocr.py`
+- `src/privacylens/ocr.py`
+- `src/privacylens/pipeline.py`
+- `tests/test_tesseract_ocr.py`
+
+### Practice
+
+1. Confirm Tesseract and the English trained data are installed with `tesseract --version`.
+2. Create a synthetic image containing a fake email and a spaced fake phone number.
+3. Run `privacy-lens input.png output.png --ocr-engine tesseract --ocr-language eng --style solid --manifest audit.json`.
+4. Confirm the PII line regions are redacted and the manifest records Tesseract's version and `eng`.
+5. Search the manifest for the fake values and confirm neither appears.
+6. Try `--ocr-language 'eng;anything'` and explain why it is rejected before execution.
+7. Explain why passing tests does not replace an Arabic and English OCR benchmark.
+
+### Interview explanation
+
+> I implemented a local Tesseract adapter behind an engine-neutral OCR contract. It reconstructs word-level TSV into line observations, reuses the existing PII recognizers, and maps sensitive lines back to redaction boxes. The subprocess boundary uses strict arguments, timeouts, bounded output, and sanitized failures. Audit records capture the engine version and languages but never raw OCR text. I clearly separate integration correctness from OCR accuracy, which still needs multilingual benchmark evaluation.
