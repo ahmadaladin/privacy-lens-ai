@@ -46,7 +46,8 @@ def test_batch_cli_reports_partial_failure(tmp_path: Path, monkeypatch, capsys) 
 
     original_process_directory = cli.process_directory
 
-    def process_with_fixed_detector(input_path, output_path, *, style):
+    def process_with_fixed_detector(input_path, output_path, *, style, ocr_extractor):
+        assert ocr_extractor is None
         return original_process_directory(
             input_path,
             output_path,
@@ -241,3 +242,40 @@ def test_ocr_engine_cli_runs_local_extractor_and_writes_audit(
     assert audit["ocr_engine_version"] == "5.3.4"
     assert audit["ocr_languages"] == ["eng"]
     assert "Redacted 1 OCR observation region(s) containing PII" in capsys.readouterr().out
+
+
+def test_ocr_engine_cli_processes_batch_without_requiring_custom_manifest(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+) -> None:
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    assert cv2.imwrite(
+        str(input_dir / "one.png"),
+        np.full((8, 8, 3), 255, dtype=np.uint8),
+    )
+    monkeypatch.setattr(cli, "TesseractOCR", lambda *, language: FixedOCRExtractor())
+
+    exit_code = cli.main(
+        [
+            str(input_dir),
+            str(output_dir),
+            "--batch",
+            "--ocr-engine",
+            "tesseract",
+            "--ocr-language",
+            "eng",
+            "--style",
+            "solid",
+        ]
+    )
+
+    assert exit_code == 0
+    output = cv2.imread(str(output_dir / "sanitized" / "one.png"))
+    assert np.all(output[1:5, 1:5] == 0)
+    batch = json.loads((output_dir / "batch-manifest.json").read_text(encoding="utf-8"))
+    assert batch["processing_mode"] == "ocr"
+    assert batch["processor"] == "FixedOCRExtractor"
+    assert "Processed 1 image(s); 0 failed" in capsys.readouterr().out

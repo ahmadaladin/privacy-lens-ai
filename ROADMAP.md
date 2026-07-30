@@ -31,6 +31,7 @@
 
 ## v0.4 — AI dataset workflow
 
+- [x] Fault-isolated OCR batch processing with per-image audit manifests
 - [ ] Recursive batch processing
 - [ ] YOLO and COCO annotation preservation
 - [ ] Recursive quarantine with resume and retry controls

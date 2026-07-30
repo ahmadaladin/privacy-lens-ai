@@ -7,11 +7,33 @@ import pytest
 
 from privacylens.batch import process_directory
 from privacylens.models import BoundingBox, Detection
+from privacylens.ocr import OCRExtraction, OCRObservation, OCRSidecar
 
 
 class FixedDetector:
     def detect(self, image: np.ndarray) -> list[Detection]:
         return [Detection("face", BoundingBox(1, 1, 4, 4), 0.9)]
+
+
+class FixedOCRExtractor:
+    def extract(self, source: Path, *, input_sha256: str) -> OCRExtraction:
+        if source.name.startswith("fail"):
+            raise ValueError("synthetic OCR failure")
+        return OCRExtraction(
+            sidecar=OCRSidecar(
+                input_sha256=input_sha256,
+                observations=(
+                    OCRObservation(
+                        "fake.person@example.com",
+                        BoundingBox(1, 1, 5, 5),
+                        0.95,
+                    ),
+                ),
+            ),
+            engine="tesseract",
+            engine_version="5.3.4",
+            languages=("eng",),
+        )
 
 
 def test_batch_continues_after_bad_image_and_quarantines_metadata(tmp_path: Path) -> None:
@@ -61,6 +83,8 @@ def test_batch_manifest_is_deterministic_and_uses_relative_output_paths(
     manifest = json.loads((output_dir / "batch-manifest.json").read_text(encoding="utf-8"))
     assert manifest["processed_count"] == 2
     assert manifest["failed_count"] == 0
+    assert manifest["processing_mode"] == "detector"
+    assert manifest["processor"] == "FixedDetector"
     assert manifest["items"][0]["output_path"] == "sanitized/A-first.jpg"
     assert str(tmp_path) not in json.dumps(manifest)
 
@@ -71,3 +95,56 @@ def test_batch_rejects_output_directory_inside_sensitive_input(tmp_path: Path) -
 
     with pytest.raises(ValueError, match="must not be inside"):
         process_directory(input_dir, input_dir / "output", detector=FixedDetector())
+
+
+def test_ocr_batch_is_fault_isolated_and_preserves_per_image_metadata(
+    tmp_path: Path,
+) -> None:
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+    for name in ("process.png", "fail.png"):
+        assert cv2.imwrite(
+            str(input_dir / name),
+            np.full((8, 8, 3), 255, dtype=np.uint8),
+        )
+
+    result = process_directory(
+        input_dir,
+        output_dir,
+        style="solid",
+        ocr_extractor=FixedOCRExtractor(),
+    )
+
+    assert result.processed_count == 1
+    assert result.failed_count == 1
+    output = cv2.imread(str(output_dir / "sanitized" / "process.png"))
+    assert np.all(output[1:5, 1:5] == 0)
+    audit_text = (output_dir / "manifests" / "process.png.json").read_text(encoding="utf-8")
+    assert "fake.person@example.com" not in audit_text
+    audit = json.loads(audit_text)
+    assert audit["ocr_engine"] == "tesseract"
+    assert audit["ocr_engine_version"] == "5.3.4"
+    assert audit["ocr_languages"] == ["eng"]
+
+    batch = json.loads((output_dir / "batch-manifest.json").read_text(encoding="utf-8"))
+    assert batch["schema_version"] == "1.1"
+    assert batch["processing_mode"] == "ocr"
+    assert batch["processor"] == "FixedOCRExtractor"
+    assert batch["processed_count"] == 1
+    assert batch["failed_count"] == 1
+    quarantine = (output_dir / "quarantine" / "fail.png.error.json").read_text(encoding="utf-8")
+    assert "fake.person@example.com" not in quarantine
+
+
+def test_batch_rejects_detector_and_ocr_extractor_together(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    input_dir.mkdir()
+
+    with pytest.raises(ValueError, match="cannot be used together"):
+        process_directory(
+            input_dir,
+            tmp_path / "output",
+            detector=FixedDetector(),
+            ocr_extractor=FixedOCRExtractor(),
+        )

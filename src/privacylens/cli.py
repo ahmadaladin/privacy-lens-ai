@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--ocr-engine",
         choices=["tesseract"],
-        help="run a supported local OCR engine; valid only for one image",
+        help="run a supported local OCR engine on one image or a batch directory",
     )
     parser.add_argument(
         "--ocr-language",
@@ -74,8 +74,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("--review-plan is valid only for single-image mode")
         if args.ocr_sidecar and (args.text or args.batch):
             raise ValueError("--ocr-sidecar is valid only for single-image mode")
-        if args.ocr_engine and (args.text or args.batch):
-            raise ValueError("--ocr-engine is valid only for single-image mode")
+        if args.ocr_engine and args.text:
+            raise ValueError("--ocr-engine is not valid in text mode")
         if args.ocr_sidecar and args.review_plan:
             raise ValueError("--ocr-sidecar and --review-plan cannot be used together")
         if args.ocr_engine and (args.ocr_sidecar or args.review_plan):
@@ -86,21 +86,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("--review-plan requires --manifest for an audit record")
         if args.ocr_sidecar and not args.manifest:
             raise ValueError("--ocr-sidecar requires --manifest for an audit record")
-        if args.ocr_engine and not args.manifest:
+        if args.ocr_engine and not args.batch and not args.manifest:
             raise ValueError("--ocr-engine requires --manifest for an audit record")
+        ocr_extractor = (
+            TesseractOCR(language=args.ocr_language or "eng")
+            if args.ocr_engine == "tesseract"
+            else None
+        )
         if args.batch:
-            batch_result = process_directory(args.input, args.output, style=args.style)
+            batch_result = process_directory(
+                args.input,
+                args.output,
+                style=args.style,
+                ocr_extractor=ocr_extractor,
+            )
         elif args.text:
             policy = load_policy(args.policy, allowed_kinds=TEXT_PII_KINDS) if args.policy else None
             text_result = process_text_file(args.input, args.output, policy=policy)
         else:
             review_plan = load_review_plan(args.review_plan) if args.review_plan else None
             ocr_sidecar = load_ocr_sidecar(args.ocr_sidecar) if args.ocr_sidecar else None
-            ocr_extractor = (
-                TesseractOCR(language=args.ocr_language or "eng")
-                if args.ocr_engine == "tesseract"
-                else None
-            )
             result = process_image(
                 args.input,
                 args.output,

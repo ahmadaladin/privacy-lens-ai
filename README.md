@@ -26,6 +26,7 @@ evaluation, PDFs, dataset-level processing, annotation preservation, and video.
 - Replace text findings with category markers and write value-free span manifests
 - Run an installed Tesseract OCR engine locally without persisting extracted text
 - Reconstruct word tokens into line regions so spaced phone numbers remain detectable
+- Run local OCR across an image directory with per-file failure isolation
 - Map provider-neutral OCR observations containing PII back to image regions
 - Bind OCR observations to the exact source image with SHA-256
 - Remove embedded image metadata during re-encoding
@@ -144,6 +145,25 @@ Batch mode intentionally does not recurse into subdirectories yet. It returns
 exit code `1` when any candidate fails, while preserving successful outputs so
 operators and CI jobs can detect partial failure.
 
+Run the same local OCR pipeline across a dataset directory:
+
+```bash
+privacy-lens input-directory output-directory \
+  --batch \
+  --ocr-engine tesseract \
+  --ocr-language eng \
+  --style solid
+```
+
+The OCR extractor is configured once and reused sequentially across the batch.
+Each successful image receives its own value-free manifest with the Tesseract
+version and languages. A failed or corrupt image gets only a metadata
+quarantine record; successful outputs remain available and the command returns
+exit code `1`. The batch manifest records whether the run used ordinary image
+detection or OCR and identifies the configured processor. This mode is
+intentionally non-recursive and single-process until resume controls and
+resource-aware parallelism are designed.
+
 Redact supported PII patterns in a UTF-8 text file:
 
 ```bash
@@ -235,6 +255,8 @@ same recognizers without embedding privacy rules inside an OCR engine.
 | Line-level token reconstruction | Spaced values such as phone numbers can be recognized without coupling PII rules to Tesseract TSV. |
 | Memory-only direct OCR text | Direct OCR does not create a raw-text sidecar or echo OCR stderr into user-facing errors. |
 | Reproducible OCR audit metadata | Engine version and language identifiers are recorded without recording extracted values. |
+| One OCR pipeline for single and batch modes | Dataset processing reuses the tested extraction, recognition, redaction, and audit path instead of duplicating it. |
+| Sequential OCR batch execution | Predictable resource use and deterministic outputs are preferred until bounded parallelism and resume semantics exist. |
 
 ## Example manifest
 
@@ -284,7 +306,9 @@ validate country numbering plans. Both can produce false positives and false
 negatives, so outputs still require review. The Tesseract adapter is a local
 engineering baseline, not an accuracy claim. OCR reading order, coordinate
 quality, language packs, image quality, tokenization, and missed text require
-the planned Arabic and English benchmark evaluation.
+the planned Arabic and English benchmark evaluation. OCR batch mode processes
+only directly contained supported images and does not yet provide recursion,
+parallelism, resume, or retry.
 
 ## License
 

@@ -221,3 +221,36 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I implemented a local Tesseract adapter behind an engine-neutral OCR contract. It reconstructs word-level TSV into line observations, reuses the existing PII recognizers, and maps sensitive lines back to redaction boxes. The subprocess boundary uses strict arguments, timeouts, bounded output, and sanitized failures. Audit records capture the engine version and languages but never raw OCR text. I clearly separate integration correctness from OCR accuracy, which still needs multilingual benchmark evaluation.
+
+## Day 8 — Fault-isolated OCR dataset batches
+
+### Concepts
+
+- Dataset orchestration should reuse the tested single-image OCR pipeline rather than duplicate extraction or redaction logic.
+- A corrupt image or OCR failure should not discard successful sanitized outputs.
+- Per-image manifests preserve engine version, languages, and redacted boxes without storing OCR text.
+- The batch manifest records the processing mode and processor so runs remain operationally traceable.
+- A partial failure returns a non-zero status so CI cannot treat an incomplete dataset as fully processed.
+- Sequential execution gives deterministic ordering and predictable OCR resource use.
+- Recursion, parallelism, resume, retry, and accuracy evaluation are separate capabilities that remain unfinished.
+
+### Files to inspect
+
+- `src/privacylens/batch.py`
+- `src/privacylens/cli.py`
+- `tests/test_batch.py`
+- `tests/test_cli.py`
+
+### Practice
+
+1. Create a folder containing two safe synthetic text images and one corrupt `.jpg`.
+2. Run `privacy-lens input output --batch --ocr-engine tesseract --ocr-language eng --style solid`.
+3. Confirm both valid files have sanitized outputs and per-image manifests.
+4. Confirm the corrupt file creates only a metadata record under `quarantine/`.
+5. Inspect `batch-manifest.json` for `processing_mode`, `processor`, processed count, and failed count.
+6. Confirm the command returns exit code `1` because the dataset is only partially complete.
+7. Explain why sequential processing is a deliberate first release rather than an accidental limitation.
+
+### Interview explanation
+
+> I extended local OCR from one image to a fault-isolated dataset workflow without creating a second implementation. Batch orchestration reuses the same extraction, PII recognition, redaction, and value-free audit path for every file. Successful outputs survive individual OCR failures, quarantine contains metadata rather than sensitive copies, and partial completion is visible to CI. Execution is deterministic and sequential until bounded parallelism and resume semantics are designed.

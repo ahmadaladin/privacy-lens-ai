@@ -9,9 +9,10 @@ from typing import Literal
 
 from privacylens.detectors.base import Detector
 from privacylens.detectors.haar_face import HaarFaceDetector
+from privacylens.ocr import OCRExtractor
 from privacylens.pipeline import SUPPORTED_SUFFIXES, process_image
 
-BATCH_MANIFEST_SCHEMA_VERSION = "1.0"
+BATCH_MANIFEST_SCHEMA_VERSION = "1.1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,6 +42,8 @@ class BatchResult:
     """Summary of a completed batch."""
 
     items: tuple[BatchItemResult, ...]
+    processing_mode: Literal["detector", "ocr"]
+    processor: str
 
     @property
     def processed_count(self) -> int:
@@ -53,6 +56,8 @@ class BatchResult:
     def to_dict(self) -> dict[str, object]:
         return {
             "schema_version": BATCH_MANIFEST_SCHEMA_VERSION,
+            "processing_mode": self.processing_mode,
+            "processor": self.processor,
             "processed_count": self.processed_count,
             "failed_count": self.failed_count,
             "items": [item.to_dict() for item in self.items],
@@ -73,6 +78,7 @@ def process_directory(
     *,
     style: str = "blur",
     detector: Detector | None = None,
+    ocr_extractor: OCRExtractor | None = None,
 ) -> BatchResult:
     """Process supported images directly inside a directory.
 
@@ -83,11 +89,17 @@ def process_directory(
     source_dir = Path(input_dir)
     destination_dir = Path(output_dir)
     _validate_directories(source_dir, destination_dir)
+    if detector is not None and ocr_extractor is not None:
+        raise ValueError("detector and ocr_extractor cannot be used together")
 
     sanitized_dir = destination_dir / "sanitized"
     manifests_dir = destination_dir / "manifests"
     quarantine_dir = destination_dir / "quarantine"
-    active_detector = detector or HaarFaceDetector()
+    active_detector = detector or (HaarFaceDetector() if ocr_extractor is None else None)
+    processing_mode: Literal["detector", "ocr"] = "ocr" if ocr_extractor is not None else "detector"
+    active_processor = ocr_extractor if ocr_extractor is not None else active_detector
+    assert active_processor is not None
+    processor = type(active_processor).__name__
     items: list[BatchItemResult] = []
 
     candidates = sorted(
@@ -108,6 +120,7 @@ def process_directory(
                 output_path,
                 style=style,
                 detector=active_detector,
+                ocr_extractor=ocr_extractor,
             )
             result.write_manifest(manifest_path)
         except Exception as error:
@@ -131,7 +144,11 @@ def process_directory(
             )
         )
 
-    batch_result = BatchResult(tuple(items))
+    batch_result = BatchResult(
+        items=tuple(items),
+        processing_mode=processing_mode,
+        processor=processor,
+    )
     batch_result.write_manifest(destination_dir / "batch-manifest.json")
     return batch_result
 

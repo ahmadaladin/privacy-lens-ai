@@ -32,6 +32,9 @@ Do not open a public issue containing personal information, private files, or un
 - Tesseract execution has a timeout and bounded accepted TSV output.
 - OCR subprocess errors report only a return code; captured stderr is not echoed.
 - Direct OCR manifests record engine metadata and redacted boxes, never extracted text.
+- OCR batch mode reuses the memory-only single-image OCR path and writes no raw OCR text.
+- OCR batch failures create metadata-only quarantine records and preserve successful outputs.
+- OCR batches run sequentially to keep resource use predictable; recursive input is not yet supported.
 - Batch quarantine stores failure metadata only; it never copies or moves the sensitive input.
 - Treat filenames and local audit manifests as potentially sensitive operational data.
 
