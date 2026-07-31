@@ -35,7 +35,7 @@
 - [ ] Recursive batch processing
 - [ ] YOLO and COCO annotation preservation
 - [ ] Recursive quarantine with resume and retry controls
-- [ ] Dataset-level risk summary
+- [x] Privacy-safe dataset-level risk summary
 - [ ] CI privacy gate
 
 ## v0.5 — Video

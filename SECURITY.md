@@ -36,6 +36,8 @@ Do not open a public issue containing personal information, private files, or un
 - OCR batch failures create metadata-only quarantine records and preserve successful outputs.
 - OCR batches run sequentially to keep resource use predictable; recursive input is not yet supported.
 - Batch quarantine stores failure metadata only; it never copies or moves the sensitive input.
+- Dataset risk summaries contain aggregate counts only, without filenames, paths, hashes, coordinates, or matched values.
+- A zero-finding image is not evidence that it contains no PII; summaries are not accuracy or compliance reports.
 - Treat filenames and local audit manifests as potentially sensitive operational data.
 
 Rule-based email and phone recognition can miss PII or classify ordinary text
@@ -66,5 +68,10 @@ the operator. PrivacyLens accepts only simple trained-data identifiers such as
 `eng` and `eng+ara`; it does not pass arbitrary OCR configuration or shell
 text. Direct OCR output is still automatic and can miss or misread sensitive
 text. A successful command is not evidence of complete PII removal.
+
+Dataset risk summaries report operational completion and automatic findings.
+They do not measure false negatives, false positives, OCR quality, precision,
+recall, or regulatory compliance. Treat empty batches, failures, and partial
+runs as requiring attention, and review automatic outputs before release.
 
 PrivacyLens does not claim that its output is automatically compliant with GDPR, HIPAA, or any other regulation.

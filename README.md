@@ -27,6 +27,7 @@ evaluation, PDFs, dataset-level processing, annotation preservation, and video.
 - Run an installed Tesseract OCR engine locally without persisting extracted text
 - Reconstruct word tokens into line regions so spaced phone numbers remain detectable
 - Run local OCR across an image directory with per-file failure isolation
+- Summarize dataset completion and detected PII categories without source identifiers
 - Map provider-neutral OCR observations containing PII back to image regions
 - Bind OCR observations to the exact source image with SHA-256
 - Remove embedded image metadata during re-encoding
@@ -140,6 +141,7 @@ Batch outputs are separated into:
 - `manifests/` for per-image audit records
 - `quarantine/` for metadata-only failure records
 - `batch-manifest.json` for deterministic processed/failed totals
+- `dataset-risk-summary.json` for value-free operational coverage and finding counts
 
 Batch mode intentionally does not recurse into subdirectories yet. It returns
 exit code `1` when any candidate fails, while preserving successful outputs so
@@ -163,6 +165,38 @@ exit code `1`. The batch manifest records whether the run used ordinary image
 detection or OCR and identifies the configured processor. This mode is
 intentionally non-recursive and single-process until resume controls and
 resource-aware parallelism are designed.
+
+Every batch also writes a privacy-safe dataset risk summary:
+
+```json
+{
+  "schema_version": "1.0",
+  "interpretation": "operational_counts_only_not_accuracy_or_safety_metrics",
+  "processing_mode": "ocr",
+  "processor": "TesseractOCR",
+  "completion_status": "partial",
+  "processing_attention_required": true,
+  "candidate_count": 3,
+  "processed_count": 2,
+  "failed_count": 1,
+  "images_with_findings": 1,
+  "images_without_findings": 1,
+  "total_findings": 2,
+  "findings_by_kind": {
+    "email": 1,
+    "phone": 1
+  },
+  "ocr_observation_count": 14
+}
+```
+
+The summary contains no filenames, paths, coordinates, hashes, or matched
+values. `images_without_findings` means only that the configured detector
+reported nothing; it does not prove those images are safe. These are
+operational monitoring counts—not precision, recall, OCR accuracy, regulatory
+evidence, or a replacement for human review. `processing_attention_required`
+flags empty, partial, or failed execution only; a complete automatic run still
+requires privacy review.
 
 Redact supported PII patterns in a UTF-8 text file:
 
@@ -257,6 +291,8 @@ same recognizers without embedding privacy rules inside an OCR engine.
 | Reproducible OCR audit metadata | Engine version and language identifiers are recorded without recording extracted values. |
 | One OCR pipeline for single and batch modes | Dataset processing reuses the tested extraction, recognition, redaction, and audit path instead of duplicating it. |
 | Sequential OCR batch execution | Predictable resource use and deterministic outputs are preferred until bounded parallelism and resume semantics exist. |
+| Value-free dataset risk summary | Operators can monitor completion, failures, and detected categories without centralizing source identifiers or matched PII. |
+| Counts are not accuracy metrics | Zero findings and a complete run do not prove privacy; benchmark evaluation and human review remain separate gates. |
 
 ## Example manifest
 

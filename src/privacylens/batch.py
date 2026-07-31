@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -11,8 +12,10 @@ from privacylens.detectors.base import Detector
 from privacylens.detectors.haar_face import HaarFaceDetector
 from privacylens.ocr import OCRExtractor
 from privacylens.pipeline import SUPPORTED_SUFFIXES, process_image
+from privacylens.risk_summary import DatasetRiskSummary
 
-BATCH_MANIFEST_SCHEMA_VERSION = "1.1"
+BATCH_MANIFEST_SCHEMA_VERSION = "1.2"
+DATASET_RISK_SUMMARY_NAME = "dataset-risk-summary.json"
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +47,7 @@ class BatchResult:
     items: tuple[BatchItemResult, ...]
     processing_mode: Literal["detector", "ocr"]
     processor: str
+    risk_summary: DatasetRiskSummary
 
     @property
     def processed_count(self) -> int:
@@ -58,6 +62,7 @@ class BatchResult:
             "schema_version": BATCH_MANIFEST_SCHEMA_VERSION,
             "processing_mode": self.processing_mode,
             "processor": self.processor,
+            "risk_summary_path": DATASET_RISK_SUMMARY_NAME,
             "processed_count": self.processed_count,
             "failed_count": self.failed_count,
             "items": [item.to_dict() for item in self.items],
@@ -101,6 +106,10 @@ def process_directory(
     assert active_processor is not None
     processor = type(active_processor).__name__
     items: list[BatchItemResult] = []
+    finding_counts: Counter[str] = Counter()
+    images_with_findings = 0
+    images_without_findings = 0
+    ocr_observation_count = 0 if processing_mode == "ocr" else None
 
     candidates = sorted(
         (
@@ -135,6 +144,13 @@ def process_directory(
             items.append(item)
             continue
 
+        finding_counts.update(detection.kind for detection in result.detections)
+        if result.detections:
+            images_with_findings += 1
+        else:
+            images_without_findings += 1
+        if ocr_observation_count is not None:
+            ocr_observation_count += result.ocr_sidecar_observation_count or 0
         items.append(
             BatchItemResult(
                 input_name=source.name,
@@ -144,10 +160,26 @@ def process_directory(
             )
         )
 
+    processed_count = sum(item.status == "processed" for item in items)
+    failed_count = len(items) - processed_count
+    risk_summary = DatasetRiskSummary(
+        processing_mode=processing_mode,
+        processor=processor,
+        candidate_count=len(candidates),
+        processed_count=processed_count,
+        failed_count=failed_count,
+        images_with_findings=images_with_findings,
+        images_without_findings=images_without_findings,
+        total_findings=sum(finding_counts.values()),
+        findings_by_kind=tuple(sorted(finding_counts.items())),
+        ocr_observation_count=ocr_observation_count,
+    )
+    risk_summary.write(destination_dir / DATASET_RISK_SUMMARY_NAME)
     batch_result = BatchResult(
         items=tuple(items),
         processing_mode=processing_mode,
         processor=processor,
+        risk_summary=risk_summary,
     )
     batch_result.write_manifest(destination_dir / "batch-manifest.json")
     return batch_result

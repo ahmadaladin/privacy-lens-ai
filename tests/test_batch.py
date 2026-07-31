@@ -19,12 +19,15 @@ class FixedOCRExtractor:
     def extract(self, source: Path, *, input_sha256: str) -> OCRExtraction:
         if source.name.startswith("fail"):
             raise ValueError("synthetic OCR failure")
+        observation_text = (
+            "Invoice total" if source.name.startswith("clean") else "fake.person@example.com"
+        )
         return OCRExtraction(
             sidecar=OCRSidecar(
                 input_sha256=input_sha256,
                 observations=(
                     OCRObservation(
-                        "fake.person@example.com",
+                        observation_text,
                         BoundingBox(1, 1, 5, 5),
                         0.95,
                     ),
@@ -85,6 +88,7 @@ def test_batch_manifest_is_deterministic_and_uses_relative_output_paths(
     assert manifest["failed_count"] == 0
     assert manifest["processing_mode"] == "detector"
     assert manifest["processor"] == "FixedDetector"
+    assert manifest["risk_summary_path"] == "dataset-risk-summary.json"
     assert manifest["items"][0]["output_path"] == "sanitized/A-first.jpg"
     assert str(tmp_path) not in json.dumps(manifest)
 
@@ -103,7 +107,7 @@ def test_ocr_batch_is_fault_isolated_and_preserves_per_image_metadata(
     input_dir = tmp_path / "input"
     output_dir = tmp_path / "output"
     input_dir.mkdir()
-    for name in ("process.png", "fail.png"):
+    for name in ("process.png", "clean.png", "fail.png"):
         assert cv2.imwrite(
             str(input_dir / name),
             np.full((8, 8, 3), 255, dtype=np.uint8),
@@ -116,7 +120,7 @@ def test_ocr_batch_is_fault_isolated_and_preserves_per_image_metadata(
         ocr_extractor=FixedOCRExtractor(),
     )
 
-    assert result.processed_count == 1
+    assert result.processed_count == 2
     assert result.failed_count == 1
     output = cv2.imread(str(output_dir / "sanitized" / "process.png"))
     assert np.all(output[1:5, 1:5] == 0)
@@ -128,13 +132,34 @@ def test_ocr_batch_is_fault_isolated_and_preserves_per_image_metadata(
     assert audit["ocr_languages"] == ["eng"]
 
     batch = json.loads((output_dir / "batch-manifest.json").read_text(encoding="utf-8"))
-    assert batch["schema_version"] == "1.1"
+    assert batch["schema_version"] == "1.2"
     assert batch["processing_mode"] == "ocr"
     assert batch["processor"] == "FixedOCRExtractor"
-    assert batch["processed_count"] == 1
+    assert batch["processed_count"] == 2
     assert batch["failed_count"] == 1
     quarantine = (output_dir / "quarantine" / "fail.png.error.json").read_text(encoding="utf-8")
     assert "fake.person@example.com" not in quarantine
+    summary_text = (output_dir / "dataset-risk-summary.json").read_text(encoding="utf-8")
+    assert "fake.person@example.com" not in summary_text
+    assert str(tmp_path) not in summary_text
+    summary = json.loads(summary_text)
+    assert summary == {
+        "schema_version": "1.0",
+        "interpretation": "operational_counts_only_not_accuracy_or_safety_metrics",
+        "processing_mode": "ocr",
+        "processor": "FixedOCRExtractor",
+        "completion_status": "partial",
+        "processing_attention_required": True,
+        "candidate_count": 3,
+        "processed_count": 2,
+        "failed_count": 1,
+        "images_with_findings": 1,
+        "images_without_findings": 1,
+        "total_findings": 1,
+        "findings_by_kind": {"email": 1},
+        "ocr_observation_count": 2,
+    }
+    assert result.risk_summary.to_dict() == summary
 
 
 def test_batch_rejects_detector_and_ocr_extractor_together(tmp_path: Path) -> None:
@@ -148,3 +173,18 @@ def test_batch_rejects_detector_and_ocr_extractor_together(tmp_path: Path) -> No
             detector=FixedDetector(),
             ocr_extractor=FixedOCRExtractor(),
         )
+
+
+def test_empty_batch_writes_attention_required_risk_summary(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "output"
+    input_dir.mkdir()
+
+    result = process_directory(input_dir, output_dir, detector=FixedDetector())
+
+    assert result.risk_summary.completion_status == "empty"
+    summary = json.loads((output_dir / "dataset-risk-summary.json").read_text(encoding="utf-8"))
+    assert summary["candidate_count"] == 0
+    assert summary["completion_status"] == "empty"
+    assert summary["processing_attention_required"] is True
+    assert summary["ocr_observation_count"] is None

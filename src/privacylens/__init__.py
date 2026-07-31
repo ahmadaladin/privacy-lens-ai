@@ -11,6 +11,7 @@ from privacylens.ocr import (
 from privacylens.pipeline import ProcessResult, process_image
 from privacylens.policy import RedactionPolicy, load_policy
 from privacylens.review import ReviewPlan, load_review_plan
+from privacylens.risk_summary import DatasetRiskSummary
 from privacylens.tesseract_ocr import TesseractOCR
 from privacylens.text_pipeline import TextProcessResult, process_text_file
 from privacylens.text_recognition import TextDetection
@@ -19,6 +20,7 @@ __all__ = [
     "BatchResult",
     "BoundingBox",
     "Detection",
+    "DatasetRiskSummary",
     "OCRExtraction",
     "OCRObservation",
     "OCRSidecar",

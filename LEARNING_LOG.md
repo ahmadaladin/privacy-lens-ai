@@ -254,3 +254,36 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I extended local OCR from one image to a fault-isolated dataset workflow without creating a second implementation. Batch orchestration reuses the same extraction, PII recognition, redaction, and value-free audit path for every file. Successful outputs survive individual OCR failures, quarantine contains metadata rather than sensitive copies, and partial completion is visible to CI. Execution is deterministic and sequential until bounded parallelism and resume semantics are designed.
+
+## Day 9 — Privacy-safe dataset risk summary
+
+### Concepts
+
+- Operational observability answers what ran, failed, and was detected; evaluation answers how accurate the model is.
+- Aggregate counts can support monitoring without exposing filenames, paths, hashes, coordinates, or matched PII.
+- Completion states should distinguish empty, complete, partial, and fully failed batches.
+- Summary invariants prevent contradictory totals from becoming trusted audit data.
+- Images without automatic findings are not proven safe because the detector may have false negatives.
+- Category counts show the dataset's detected privacy profile without centralizing sensitive examples.
+- Precision and recall require labeled ground truth and cannot be inferred from production detection counts.
+
+### Files to inspect
+
+- `src/privacylens/risk_summary.py`
+- `src/privacylens/batch.py`
+- `tests/test_risk_summary.py`
+- `tests/test_batch.py`
+
+### Practice
+
+1. Run an OCR batch containing one image with a fake email, one image with ordinary text, and one corrupt image.
+2. Open `dataset-risk-summary.json` and identify the partial completion state.
+3. Verify one image has findings, one has none, and one failed.
+4. Confirm the summary contains no filenames, local paths, hashes, coordinates, or fake email value.
+5. Remove all candidate images, rerun, and confirm the state becomes `empty` with `processing_attention_required: true`.
+6. Explain why `images_without_findings` cannot be renamed to `safe_images`.
+7. Explain what labeled data is needed before reporting precision and recall.
+
+### Interview explanation
+
+> I added a value-free observability layer for dataset processing. It aggregates completion, failure, OCR observation, and PII category counts while excluding source identifiers and matched values. The model enforces internally consistent totals and distinguishes empty, complete, partial, and failed runs. I explicitly label these as operational counts—not accuracy or safety metrics—because false negatives require a labeled benchmark and human review.
