@@ -287,3 +287,37 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I added a value-free observability layer for dataset processing. It aggregates completion, failure, OCR observation, and PII category counts while excluding source identifiers and matched values. The model enforces internally consistent totals and distinguishes empty, complete, partial, and failed runs. I explicitly label these as operational counts—not accuracy or safety metrics—because false negatives require a labeled benchmark and human review.
+
+## Day 10 — Batch completeness and evidence-integrity CI gate
+
+### Concepts
+
+- A CI gate should distinguish an incomplete run from malformed or contradictory evidence.
+- Exit codes are a machine-readable contract: `0` passes, `1` needs processing attention, and `2` means evidence is invalid.
+- Generated manifests are untrusted inputs when a later CI job reads them.
+- Strict schemas, bounded reads, duplicate-key rejection, and fixed relative paths reduce parser and path-traversal risks.
+- Cross-checking independent batch and risk-summary totals catches accidental or deliberate tampering.
+- Exact managed-directory inventories prevent stale outputs from an earlier run entering a later dataset.
+- Artifact existence can be verified without opening potentially sensitive image contents.
+- Processing completeness is not model accuracy, privacy assurance, or regulatory compliance.
+
+### Files to inspect
+
+- `src/privacylens/gate.py`
+- `src/privacylens/risk_summary.py`
+- `tests/test_gate.py`
+- `tests/test_risk_summary.py`
+
+### Practice
+
+1. Run a complete batch and confirm `privacy-lens-gate output-directory` returns `0`.
+2. Add a corrupt input, rerun into a fresh output directory, and confirm the gate returns `1`.
+3. Change a count in `dataset-risk-summary.json` and confirm the gate returns `2`.
+4. Replace an output path in `batch-manifest.json` with `../escape.png` and confirm it is rejected.
+5. Confirm the gate output reports aggregate counts without filenames or source paths.
+6. Explain why a valid partial batch is different from an invalid manifest.
+7. Explain why a passing gate cannot replace the multilingual benchmark or human review.
+
+### Interview explanation
+
+> I added a CI-safe verification boundary around batch outputs. It treats generated JSON as untrusted, validates strict size-bounded schemas, rejects duplicate keys and path traversal, cross-checks the batch manifest against the value-free risk summary and quarantine records, and confirms expected artifacts exist without opening images. Separate exit codes distinguish a trustworthy but incomplete run from evidence that is malformed or contradictory. A pass means the pipeline completed consistently—not that the detector has perfect recall or that the dataset is compliant.

@@ -28,6 +28,7 @@ evaluation, PDFs, dataset-level processing, annotation preservation, and video.
 - Reconstruct word tokens into line regions so spaced phone numbers remain detectable
 - Run local OCR across an image directory with per-file failure isolation
 - Summarize dataset completion and detected PII categories without source identifiers
+- Gate CI on non-empty, complete, internally consistent batch evidence
 - Map provider-neutral OCR observations containing PII back to image regions
 - Bind OCR observations to the exact source image with SHA-256
 - Remove embedded image metadata during re-encoding
@@ -198,6 +199,41 @@ evidence, or a replacement for human review. `processing_attention_required`
 flags empty, partial, or failed execution only; a complete automatic run still
 requires privacy review.
 
+Validate a batch before a downstream publishing or training job:
+
+```bash
+privacy-lens-gate output-directory
+```
+
+The gate exits `0` only for a non-empty, complete batch whose manifest, risk
+summary, quarantine records, and expected artifact references agree. It exits
+`1` for valid empty, partial, or failed runs, and `2` for missing, malformed,
+tampered, or unsafe evidence. The verifier uses strict, size-bounded JSON and
+rejects duplicate keys and path traversal. It checks that expected image and
+manifest artifacts exist, rejects stale or unlisted files in managed output
+directories, and does not open image contents. Its console output contains
+aggregate counts rather than filenames.
+
+This is a processing-completeness and evidence-consistency gate. Passing it
+does not prove that OCR or PII detection found everything, that the output is
+private, or that it is compliant. Accuracy still requires labeled evaluation,
+and release still requires human review.
+
+In GitHub Actions, let the processing step finish so the gate can classify its
+evidence, then make the gate the blocking step:
+
+```yaml
+- name: Process synthetic or approved dataset
+  continue-on-error: true
+  run: privacy-lens input-directory output-directory --batch --style solid
+- name: Require complete, consistent batch evidence
+  run: privacy-lens-gate output-directory
+```
+
+Do not upload source images, OCR sidecars, per-image manifests, or sanitized
+outputs as public CI artifacts. Use synthetic or explicitly approved data and
+apply repository-specific retention controls.
+
 Redact supported PII patterns in a UTF-8 text file:
 
 ```bash
@@ -293,6 +329,7 @@ same recognizers without embedding privacy rules inside an OCR engine.
 | Sequential OCR batch execution | Predictable resource use and deterministic outputs are preferred until bounded parallelism and resume semantics exist. |
 | Value-free dataset risk summary | Operators can monitor completion, failures, and detected categories without centralizing source identifiers or matched PII. |
 | Counts are not accuracy metrics | Zero findings and a complete run do not prove privacy; benchmark evaluation and human review remain separate gates. |
+| Distinct CI gate outcomes | Exit `1` means valid but incomplete processing; exit `2` means the evidence itself cannot be trusted. |
 
 ## Example manifest
 

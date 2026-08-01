@@ -36,7 +36,7 @@
 - [ ] YOLO and COCO annotation preservation
 - [ ] Recursive quarantine with resume and retry controls
 - [x] Privacy-safe dataset-level risk summary
-- [ ] CI privacy gate
+- [x] Batch completeness and evidence-integrity CI gate
 
 ## v0.5 — Video
 

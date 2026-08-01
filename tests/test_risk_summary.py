@@ -1,6 +1,9 @@
+import json
+from pathlib import Path
+
 import pytest
 
-from privacylens.risk_summary import DatasetRiskSummary
+from privacylens.risk_summary import DatasetRiskSummary, load_risk_summary
 
 
 def make_summary(**changes) -> DatasetRiskSummary:
@@ -95,3 +98,27 @@ def test_summary_declares_counts_are_not_accuracy_or_safety_metrics() -> None:
     assert data["interpretation"] == "operational_counts_only_not_accuracy_or_safety_metrics"
     assert data["findings_by_kind"] == {"email": 1, "phone": 1}
     assert not {"input_path", "output_path", "input_name"} & set(data)
+
+
+def test_written_summary_round_trips_through_strict_loader(tmp_path: Path) -> None:
+    path = tmp_path / "summary.json"
+    expected = make_summary()
+    expected.write(path)
+
+    assert load_risk_summary(path) == expected
+
+
+def test_loader_rejects_unknown_fields_and_inconsistent_derived_values(tmp_path: Path) -> None:
+    path = tmp_path / "summary.json"
+    data = make_summary().to_dict()
+    data["completion_status"] = "complete"
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="inconsistent derived fields"):
+        load_risk_summary(path)
+
+    data = make_summary().to_dict()
+    data["unexpected"] = True
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(ValueError, match="exactly the supported fields"):
+        load_risk_summary(path)

@@ -38,6 +38,8 @@ Do not open a public issue containing personal information, private files, or un
 - Batch quarantine stores failure metadata only; it never copies or moves the sensitive input.
 - Dataset risk summaries contain aggregate counts only, without filenames, paths, hashes, coordinates, or matched values.
 - A zero-finding image is not evidence that it contains no PII; summaries are not accuracy or compliance reports.
+- The CI gate strictly validates size-bounded batch evidence, rejects duplicate JSON keys, unsafe paths, and stale managed artifacts, and never opens output images.
+- A passing CI gate proves processing completeness and evidence consistency only; it does not prove detection accuracy, privacy, or compliance.
 - Treat filenames and local audit manifests as potentially sensitive operational data.
 
 Rule-based email and phone recognition can miss PII or classify ordinary text

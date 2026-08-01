@@ -26,6 +26,7 @@ dev = [
 
 [project.scripts]
 privacy-lens = "privacylens.cli:main"
+privacy-lens-gate = "privacylens.gate:main"
 
 [project.urls]
 Repository = "https://github.com/ahmadaladin/privacy-lens-ai"

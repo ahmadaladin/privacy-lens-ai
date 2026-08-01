@@ -9,6 +9,7 @@ from typing import Literal
 
 RISK_SUMMARY_SCHEMA_VERSION = "1.0"
 RISK_SUMMARY_INTERPRETATION = "operational_counts_only_not_accuracy_or_safety_metrics"
+MAX_RISK_SUMMARY_BYTES = 64 * 1024
 CompletionStatus = Literal["empty", "complete", "partial", "failed"]
 ProcessingMode = Literal["detector", "ocr"]
 
@@ -104,6 +105,77 @@ class DatasetRiskSummary:
             json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n",
             encoding="utf-8",
         )
+
+
+def load_risk_summary(path: str | Path) -> DatasetRiskSummary:
+    """Load and strictly validate an untrusted dataset risk summary."""
+
+    summary_path = Path(path)
+    try:
+        if summary_path.stat().st_size > MAX_RISK_SUMMARY_BYTES:
+            raise ValueError("risk summary exceeds the safety limit")
+        data = json.loads(
+            summary_path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_object,
+        )
+    except OSError as error:
+        raise ValueError("risk summary cannot be read") from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError("risk summary must be valid UTF-8 JSON") from error
+
+    expected_keys = {
+        "schema_version",
+        "interpretation",
+        "processing_mode",
+        "processor",
+        "completion_status",
+        "processing_attention_required",
+        "candidate_count",
+        "processed_count",
+        "failed_count",
+        "images_with_findings",
+        "images_without_findings",
+        "total_findings",
+        "findings_by_kind",
+        "ocr_observation_count",
+    }
+    if not isinstance(data, dict) or set(data) != expected_keys:
+        raise ValueError("risk summary must contain exactly the supported fields")
+    if data["schema_version"] != RISK_SUMMARY_SCHEMA_VERSION:
+        raise ValueError("unsupported risk-summary schema_version")
+    if data["interpretation"] != RISK_SUMMARY_INTERPRETATION:
+        raise ValueError("risk-summary interpretation is invalid")
+    findings = data["findings_by_kind"]
+    if not isinstance(findings, dict):
+        raise ValueError("findings_by_kind must be an object")
+
+    try:
+        summary = DatasetRiskSummary(
+            processing_mode=data["processing_mode"],
+            processor=data["processor"],
+            candidate_count=data["candidate_count"],
+            processed_count=data["processed_count"],
+            failed_count=data["failed_count"],
+            images_with_findings=data["images_with_findings"],
+            images_without_findings=data["images_without_findings"],
+            total_findings=data["total_findings"],
+            findings_by_kind=tuple(sorted(findings.items())),
+            ocr_observation_count=data["ocr_observation_count"],
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("risk summary contains invalid values") from error
+    if summary.to_dict() != data:
+        raise ValueError("risk summary contains inconsistent derived fields")
+    return summary
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("JSON objects must not contain duplicate keys")
+        result[key] = value
+    return result
 
 
 def _validate_findings(findings: tuple[tuple[str, int], ...], *, total: int) -> None:
