@@ -1,0 +1,58 @@
+{
+  "schema_version": "1.0",
+  "data_classification": "synthetic",
+  "benchmark_id": "synthetic-text-v1",
+  "cases": [
+    {
+      "case_id": "en-email",
+      "language": "en",
+      "text": "Contact fake.person@example.com for help.",
+      "expected": [{"kind": "email", "span": [8, 31]}]
+    },
+    {
+      "case_id": "en-phone",
+      "language": "en",
+      "text": "Call +1 202-555-0147 during office hours.",
+      "expected": [{"kind": "phone", "span": [5, 20]}]
+    },
+    {
+      "case_id": "ar-phone",
+      "language": "ar",
+      "text": "للتواصل اتصل على +١ ٢٠٢ ٥٥٥ ٠١٤٨",
+      "expected": [{"kind": "phone", "span": [17, 32]}]
+    },
+    {
+      "case_id": "en-date-negative",
+      "language": "en",
+      "text": "Review date: 2026-08-02.",
+      "expected": []
+    },
+    {
+      "case_id": "ar-date-negative",
+      "language": "ar",
+      "text": "تاريخ المراجعة: ٢٠٢٦-٠٨-٠٢",
+      "expected": []
+    },
+    {
+      "case_id": "en-combined",
+      "language": "en",
+      "text": "Email qa.user@example.org or call (202) 555-0149.",
+      "expected": [
+        {"kind": "email", "span": [6, 25]},
+        {"kind": "phone", "span": [34, 48]}
+      ]
+    },
+    {
+      "case_id": "ar-email-context",
+      "language": "ar",
+      "text": "البريد: demo@example.net",
+      "expected": [{"kind": "email", "span": [8, 24]}]
+    },
+    {
+      "case_id": "en-ordinary-negative",
+      "language": "en",
+      "text": "No contact details are present.",
+      "expected": []
+    }
+  ]
+}

@@ -25,3 +25,10 @@ jobs:
         run: ruff check .
       - name: Run tests
         run: pytest
+      - name: Run synthetic text PII benchmark
+        run: >-
+          privacy-lens-benchmark
+          benchmarks/synthetic_text_v1.json
+          /tmp/synthetic-text-report.json
+          --minimum-precision 1.0
+          --minimum-recall 1.0

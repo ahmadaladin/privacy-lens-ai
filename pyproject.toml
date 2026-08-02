@@ -26,6 +26,7 @@ dev = [
 
 [project.scripts]
 privacy-lens = "privacylens.cli:main"
+privacy-lens-benchmark = "privacylens.benchmark:main"
 privacy-lens-gate = "privacylens.gate:main"
 
 [project.urls]

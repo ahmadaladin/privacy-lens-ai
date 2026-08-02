@@ -321,3 +321,38 @@ This file records the concepts Ahmed should be able to demonstrate and explain a
 ### Interview explanation
 
 > I added a CI-safe verification boundary around batch outputs. It treats generated JSON as untrusted, validates strict size-bounded schemas, rejects duplicate keys and path traversal, cross-checks the batch manifest against the value-free risk summary and quarantine records, and confirms expected artifacts exist without opening images. Separate exit codes distinguish a trustworthy but incomplete run from evidence that is malformed or contradictory. A pass means the pipeline completed consistently—not that the detector has perfect recall or that the dataset is compliant.
+
+## Day 11 — Synthetic text PII benchmark and quality thresholds
+
+### Concepts
+
+- Precision measures how many predicted findings were correct; recall measures how many labeled findings were found.
+- Exact-span matching requires the category, start offset, and end offset to agree with ground truth.
+- F1 is the harmonic mean of precision and recall and cannot replace inspecting both.
+- A negative example is needed to expose false positives; positive examples expose false negatives.
+- CI thresholds turn evaluation into an explicit release contract rather than a dashboard-only number.
+- Aggregate reports can retain metrics without duplicating benchmark text or labeled spans.
+- A declared-synthetic dataset is a trust assertion, not something software can prove automatically.
+- A small regression fixture detects known breakage but does not establish real-world generalization.
+- Text-recognizer evaluation starts after text exists and therefore says nothing about OCR accuracy.
+
+### Files to inspect
+
+- `benchmarks/synthetic_text_v1.json`
+- `src/privacylens/benchmark.py`
+- `tests/test_benchmark.py`
+- `.github/workflows/tests.yml`
+
+### Practice
+
+1. Run the committed benchmark with precision and recall thresholds of `1.0`.
+2. Inspect the aggregate report and identify TP, FP, FN, precision, recall, and F1.
+3. Change one expected phone span by one character and confirm the benchmark returns exit `1`.
+4. Add an unexpected JSON field and confirm the benchmark returns exit `2`.
+5. Confirm the report contains neither the synthetic email nor Arabic-digit phone value.
+6. Explain why an exact-span mismatch creates one false positive and one false negative.
+7. Explain why eight passing cases do not demonstrate Arabic OCR quality or production readiness.
+
+### Interview explanation
+
+> I added a versioned evaluation boundary for the rule-based text PII layer. It loads strictly validated, declared-synthetic English and Arabic-digit labels, uses exact category-and-span matching, and produces aggregate-only precision, recall, and F1 reports. Explicit thresholds block CI regressions, while separate exit codes distinguish a metric failure from an invalid benchmark. I deliberately scope the result to known text-recognition cases: it does not measure OCR, unseen data, fairness, or end-to-end privacy.

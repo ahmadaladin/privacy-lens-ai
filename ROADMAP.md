@@ -48,7 +48,11 @@
 ## v1.0 — Evaluated release
 
 - [ ] Synthetic multilingual benchmark
+  - [x] Versioned English and Arabic-digit text PII regression set
+  - [ ] Labeled multilingual OCR image benchmark
 - [ ] Precision, recall, failure, and latency reporting
+  - [x] Exact-span text PII precision, recall, and F1
+  - [ ] OCR accuracy, failure, and latency metrics
 - [ ] Docker image
 - [ ] Stable Python API and CLI
 - [ ] Complete security and limitation documentation

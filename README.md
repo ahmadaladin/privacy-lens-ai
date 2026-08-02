@@ -29,6 +29,7 @@ evaluation, PDFs, dataset-level processing, annotation preservation, and video.
 - Run local OCR across an image directory with per-file failure isolation
 - Summarize dataset completion and detected PII categories without source identifiers
 - Gate CI on non-empty, complete, internally consistent batch evidence
+- Evaluate text PII recognizers against versioned synthetic multilingual labels
 - Map provider-neutral OCR observations containing PII back to image regions
 - Bind OCR observations to the exact source image with SHA-256
 - Remove embedded image metadata during re-encoding
@@ -234,6 +235,31 @@ Do not upload source images, OCR sidecars, per-image manifests, or sanitized
 outputs as public CI artifacts. Use synthetic or explicitly approved data and
 apply repository-specific retention controls.
 
+Evaluate the text PII recognition layer against the committed synthetic
+English and Arabic-digit regression set:
+
+```bash
+privacy-lens-benchmark \
+  benchmarks/synthetic_text_v1.json \
+  benchmark-report.json \
+  --minimum-precision 1.0 \
+  --minimum-recall 1.0
+```
+
+The evaluator uses exact category-and-character-span matching and reports true
+positives, false positives, false negatives, precision, recall, and F1 overall
+and by PII category and language. Thresholds are explicit: exit `0` means both
+were met, exit `1` means valid results fell below them, and exit `2` means the
+benchmark or configuration was invalid. Reports contain aggregate metrics,
+never source text, case identifiers, or spans.
+
+The included eight-case dataset is a deterministic regression fixture, not a
+claim of real-world model quality. Its `1.0` result only confirms the current
+rules still handle those known examples. The benchmark evaluates text PII
+recognition after text is available; it does not evaluate Tesseract, image
+quality, Arabic OCR, end-to-end redaction, demographic performance, or unseen
+data. Those require a larger labeled OCR image benchmark.
+
 Redact supported PII patterns in a UTF-8 text file:
 
 ```bash
@@ -330,6 +356,9 @@ same recognizers without embedding privacy rules inside an OCR engine.
 | Value-free dataset risk summary | Operators can monitor completion, failures, and detected categories without centralizing source identifiers or matched PII. |
 | Counts are not accuracy metrics | Zero findings and a complete run do not prove privacy; benchmark evaluation and human review remain separate gates. |
 | Distinct CI gate outcomes | Exit `1` means valid but incomplete processing; exit `2` means the evidence itself cannot be trusted. |
+| Exact-span benchmark matching | A prediction counts only when both the PII category and character boundaries match the synthetic label. |
+| Explicit benchmark thresholds | CI acceptance criteria are versioned in workflow code rather than inferred from a favorable-looking score. |
+| Aggregate-only evaluation reports | Metrics can be retained without copying benchmark text or labeled spans into another artifact. |
 
 ## Example manifest
 
@@ -372,16 +401,17 @@ See [ROADMAP.md](ROADMAP.md) for the phased development plan and [LEARNING_LOG.m
 ## Project status
 
 PrivacyLens is under active development. The face detector and text recognizers
-are intentionally lightweight baselines that require evaluation before a
-stable release. The current email rule targets conventional ASCII addresses;
-the phone rule checks plausible digit counts and separators but does not
-validate country numbering plans. Both can produce false positives and false
-negatives, so outputs still require review. The Tesseract adapter is a local
-engineering baseline, not an accuracy claim. OCR reading order, coordinate
-quality, language packs, image quality, tokenization, and missed text require
-the planned Arabic and English benchmark evaluation. OCR batch mode processes
-only directly contained supported images and does not yet provide recursion,
-parallelism, resume, or retry.
+are intentionally lightweight baselines that require broader evaluation before
+a stable release. The committed text fixture protects eight known regression
+cases but does not demonstrate generalization. The current email rule targets
+conventional ASCII addresses; the phone rule checks plausible digit counts and
+separators but does not validate country numbering plans. Both can produce
+false positives and false negatives, so outputs still require review. The
+Tesseract adapter is a local engineering baseline, not an accuracy claim. OCR
+reading order, coordinate quality, language packs, image quality, tokenization,
+and missed text require the planned Arabic and English OCR evaluation. OCR
+batch mode processes only directly contained supported images and does not yet
+provide recursion, parallelism, resume, or retry.
 
 ## License
 
